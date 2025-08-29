@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import '@types/three';
 import { Canvas, useFrame } from '@react-three/fiber';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -23,6 +22,43 @@ function SpinningTorus() {
       <torusKnotGeometry args={[1, 0.35, 256, 32]} />
       <meshStandardMaterial color="#6366f1" metalness={0.5} roughness={0.25} />
     </mesh>
+  );
+}
+
+function PollBars() {
+  const groupRef = useRef<THREE.Group>(null!);
+  const bars = useMemo(
+    () => [
+      { x: -2, color: '#6366f1' }, // Indigo
+      { x: -1, color: '#22c55e' }, // Emerald
+      { x: 0, color: '#f59e0b' },  // Amber
+      { x: 1, color: '#06b6d4' },  // Cyan
+      { x: 2, color: '#a855f7' },  // Violet
+    ],
+    []
+  );
+
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime();
+    if (!groupRef.current) return;
+    groupRef.current.children.forEach((child: THREE.Object3D, i: number) => {
+      // Animate bar heights to simulate changing poll results
+      const height = 0.6 + ((Math.sin(t * 1.2 + i * 0.7) + 1) / 2) * 1.8; // range ~0.6 -> 2.4
+      child.scale.y = height;
+      // Keep bars grounded by moving their center up by half the height
+      child.position.y = height / 2;
+    });
+  });
+
+  return (
+    <group ref={groupRef} position={[0, 0, 0]}>
+      {bars.map((b, i) => (
+        <mesh key={i} position={[b.x, 0.5, 0]} castShadow receiveShadow>
+          <boxGeometry args={[0.7, 1, 0.7]} />
+          <meshStandardMaterial color={b.color} metalness={0.25} roughness={0.4} />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
@@ -54,7 +90,9 @@ export default function Home() {
               <ambientLight intensity={0.6} />
               <directionalLight position={[5, 5, 5]} intensity={1} castShadow />
               <directionalLight position={[-5, -5, -5]} intensity={0.2} />
-              <SpinningTorus />
+              {/* Poll-themed animated bars */}
+              <PollBars />
+              {/* Ground plane for soft shadow */}
               <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.2, 0]} receiveShadow>
                 <planeGeometry args={[20, 20]} />
                 <meshStandardMaterial color="#e5e7eb" />

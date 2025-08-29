@@ -15,7 +15,7 @@ export default function CreatePollPage() {
 
   useEffect(() => {
     if (!isLoading && !session) {
-      router.push('/auth');
+      router.push('/login');
     }
   }, [session, isLoading, router]);
 

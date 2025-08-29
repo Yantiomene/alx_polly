@@ -12,7 +12,7 @@ export default function PollsPage() {
 
   useEffect(() => {
     if (!isLoading && !session) {
-      router.push('/auth');
+      router.push('/login');
     }
   }, [session, isLoading, router]);
 

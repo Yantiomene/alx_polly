@@ -25,7 +25,7 @@ export function Navbar() {
           <Button variant={pathname === '/login' ? 'default' : 'outline'} className="text-base hover:text-gray-900">Login</Button>
         </Link>
         <Link href="/signup">
-          <Button variant={pathname === '/signup' ? 'default' : 'default'} className="text-base hover:text-gray-900">Sign Up</Button>
+          <Button variant={pathname === '/signup' ? 'default' : 'outline'} className="text-base hover:text-gray-900">Sign Up</Button>
         </Link>
       </div>
     </nav>
