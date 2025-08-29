@@ -1,9 +1,25 @@
 "use client"
 
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { useAuth } from '@/components/auth-context';
 
 export default function PollsPage() {
+  const { session, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoading && !session) {
+      router.push('/auth');
+    }
+  }, [session, isLoading, router]);
+
+  if (isLoading || !session) {
+    return <div className="flex justify-center items-center min-h-screen">Loading...</div>;
+  }
+
   const polls = [
     { id: '1', title: 'Favorite Programming Language?', description: 'Choose your favorite programming language.' },
     { id: '2', title: 'Best AI Framework?', description: 'Which AI framework do you prefer?' },
