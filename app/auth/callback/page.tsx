@@ -18,6 +18,7 @@ export default function CallbackPage() {
           await supabase.from('profiles').upsert({
             id: user.id,
             username: (user.user_metadata as any)?.username ?? null,
+            email: user.email ?? null,
             updated_at: new Date().toISOString(),
           }, { onConflict: 'id' });
         } catch (_) {
