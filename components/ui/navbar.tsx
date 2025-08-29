@@ -25,31 +25,31 @@ export function Navbar() {
   };
 
   return (
-    <nav className="flex items-center justify-between p-4 bg-gray-100 shadow-sm">
+    <nav className="fixed inset-x-0 top-0 z-50 flex items-center justify-between border-b border-input bg-white/80 p-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:border-zinc-800 dark:bg-zinc-900/80 dark:supports-[backdrop-filter]:bg-zinc-900/60">
       <div className="flex items-center gap-2 md:gap-4">
         <Link href="/">
-          <Button variant={pathname === '/' ? 'default' : 'ghost'} className="text-base hover:text-gray-900">Home</Button>
+          <Button variant={pathname === '/' ? 'default' : 'ghost'} className="text-base text-zinc-900 dark:text-zinc-100">Home</Button>
         </Link>
         <Link href="/polls">
-          <Button variant={pathname === '/polls' ? 'default' : 'ghost'} className="text-base hover:text-gray-900">Polls</Button>
+          <Button variant={pathname === '/polls' ? 'default' : 'ghost'} className="text-base text-zinc-900 dark:text-zinc-100">Polls</Button>
         </Link>
         <Link href="/create-poll">
-          <Button variant={pathname === '/create-poll' ? 'default' : 'ghost'} className="text-base hover:text-gray-900">Create Poll</Button>
+          <Button variant={pathname === '/create-poll' ? 'default' : 'ghost'} className="text-base text-zinc-900 dark:text-zinc-100">Create Poll</Button>
         </Link>
       </div>
       {session ? (
         <div className="flex gap-2 md:gap-4">
-          <Button variant="outline" className="text-base hover:text-gray-900" onClick={handleLogout} disabled={loggingOut}>
+          <Button variant="outline" className="text-base text-zinc-900 dark:text-zinc-100" onClick={handleLogout} disabled={loggingOut}>
             {loggingOut ? 'Logging out…' : 'Logout'}
           </Button>
         </div>
       ) : (
         <div className="flex gap-2 md:gap-4">
           <Link href="/login">
-            <Button variant={pathname === '/login' ? 'default' : 'outline'} className="text-base hover:text-gray-900">Login</Button>
+            <Button variant={pathname === '/login' ? 'default' : 'outline'} className="text-base text-zinc-900 dark:text-zinc-100">Login</Button>
           </Link>
           <Link href="/signup">
-            <Button variant={pathname === '/signup' ? 'default' : 'outline'} className="text-base hover:text-gray-900">Sign Up</Button>
+            <Button variant={pathname === '/signup' ? 'default' : 'outline'} className="text-base text-zinc-900 dark:text-zinc-100">Sign Up</Button>
           </Link>
         </div>
       )}
