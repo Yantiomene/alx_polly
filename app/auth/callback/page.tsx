@@ -12,9 +12,20 @@ export default function CallbackPage() {
     const handleAuthCallback = async () => {
       const { data } = await supabase.auth.getSession();
       if (data?.session) {
+        // Ensure profile exists after email confirmation
+        const user = data.session.user;
+        try {
+          await supabase.from('profiles').upsert({
+            id: user.id,
+            username: (user.user_metadata as any)?.username ?? null,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'id' });
+        } catch (_) {
+          // ignore upsert errors in callback; user will proceed anyway
+        }
         router.replace('/polls');
       } else {
-        router.replace('/auth');
+        router.replace('/login');
       }
     };
 
