@@ -3,6 +3,23 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* Theme tokens for components */
+  --primary: #6366f1; /* indigo-500/600 */
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5; /* zinc-100 */
+  --secondary-foreground: #09090b; /* zinc-950 */
+  --destructive: #ef4444; /* red-500 */
+  --destructive-foreground: #ffffff;
+  --muted: #f4f4f5; /* zinc-100 */
+  --muted-foreground: #71717a; /* zinc-500 */
+  --accent: #f4f4f5; /* zinc-100 */
+  --accent-foreground: #09090b; /* zinc-950 */
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --input: #e5e7eb; /* gray-200 */
+  --ring: #6366f1; /* indigo-500 */
 }
 
 @theme inline {
@@ -10,12 +27,46 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* Map theme tokens used by UI components */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    /* Dark theme tokens */
+    --primary: #6366f1; /* keep same primary */
+    --primary-foreground: #ffffff;
+    --secondary: #27272a; /* zinc-800 */
+    --secondary-foreground: #e4e4e7; /* zinc-200 */
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    --muted: #27272a;
+    --muted-foreground: #a1a1aa; /* zinc-400 */
+    --accent: #27272a;
+    --accent-foreground: #e4e4e7;
+    --popover: #0a0a0a;
+    --popover-foreground: #ededed;
+    --card: #0a0a0a;
+    --card-foreground: #ededed;
+    --input: #3f3f46; /* zinc-700 */
+    --ring: #818cf8; /* indigo-400 */
   }
 }
 

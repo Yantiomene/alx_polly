@@ -36,7 +36,7 @@ export default function AuthPage() {
   };
 
   return (
-    <Card className="w-[350px]">
+    <Card className="w-[360px]">
       <CardHeader>
         <CardTitle>{view === 'sign-in' ? 'Login' : 'Sign Up'}</CardTitle>
         <CardDescription>
@@ -69,16 +69,16 @@ export default function AuthPage() {
           </div>
         </form>
       </CardContent>
-      <CardFooter className="flex justify-between">
+      <CardFooter className="flex flex-col gap-3">
         {view === 'sign-in' ? (
           <>
-            <Button variant="outline" onClick={() => setView('sign-up')}>Sign Up</Button>
-            <Button onClick={handleSignIn}>Login</Button>
+            <Button variant="outline" size="lg" className="w-full" onClick={() => setView('sign-up')}>Sign Up</Button>
+            <Button size="lg" className="w-full font-semibold" onClick={handleSignIn}>Login</Button>
           </>
         ) : (
           <>
-            <Button variant="outline" onClick={() => setView('sign-in')}>Login</Button>
-            <Button onClick={handleSignUp}>Sign Up</Button>
+            <Button variant="outline" size="lg" className="w-full" onClick={() => setView('sign-in')}>Login</Button>
+            <Button size="lg" className="w-full font-semibold" onClick={handleSignUp}>Sign Up</Button>
           </>
         )}
       </CardFooter>

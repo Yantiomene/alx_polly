@@ -66,7 +66,7 @@ export default function SignUpPage() {
           </div>
         </CardContent>
         <CardFooter>
-          <Button className="w-full" onClick={handleSignUp}>
+          <Button size="lg" className="w-full font-semibold" onClick={handleSignUp}>
             Sign Up
           </Button>
         </CardFooter>
