@@ -140,7 +140,9 @@ export default function PollsPage() {
               )}
             </CardHeader>
             <CardContent className="flex items-center gap-2">
-              <Button disabled title="Coming soon">View Poll</Button>
+              <Link href={`/polls/${poll.id}`}>
+                <Button>View Poll</Button>
+              </Link>
               {isOwner && (
                 <>
                   <Link href={`/polls/${poll.id}/edit`}>
