@@ -76,7 +76,8 @@ export default async function CreatePollPage() {
       redirect("/create-poll?error=create_options_failed");
     }
 
-    redirect("/polls");
+    // Success: let client show a success message before navigating away
+    return { ok: true, pollId: poll.id };
   }
 
   return <CreatePollForm action={createPollAction} />;

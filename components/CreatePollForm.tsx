@@ -1,23 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 
+type CreateResult = { ok: boolean; pollId: string } | void;
+
 type Props = {
-  action: (formData: FormData) => Promise<void>;
+  action: (formData: FormData) => Promise<CreateResult>;
 };
 
 export default function CreatePollForm({ action }: Props) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const error = searchParams.get("error");
 
   const [options, setOptions] = useState<string[]>(["", ""]);
   const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const addOption = () => setOptions((prev) => [...prev, ""]);
   const removeOption = (index: number) => {
@@ -40,12 +44,25 @@ export default function CreatePollForm({ action }: Props) {
             {error === "create_options_failed" && "Poll created but adding options failed. Please try again."}
           </div>
         )}
+        {success && (
+          <div className="mb-4 rounded-md border border-emerald-300/60 bg-emerald-50 text-emerald-700 px-3 py-2 text-sm">
+            Poll created successfully! Redirecting to polls…
+          </div>
+        )}
         <form
           action={async (formData) => {
             try {
               setSubmitting(true);
-              await action(formData);
+              const result = await action(formData);
+              if (result && (result as any).ok) {
+                setSuccess(true);
+                setTimeout(() => router.push("/polls"), 1200);
+              } else {
+                // If server action didn't return payload (older behavior), still navigate
+                router.push("/polls");
+              }
             } finally {
+              // Keep submitting state until redirect to avoid resubmits
               setSubmitting(false);
             }
           }}
