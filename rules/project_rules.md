@@ -42,18 +42,18 @@ The project uses the following technologies. Do not introduce new libraries or f
 ## Verification Checklist
 Before finalizing any code, verify:
 
-(-) Uses Next.js App Router with Server Components for data fetching
-(-) Server Actions are used for form submissions and data mutations
-(-) Supabase client is used correctly (server vs client context)
-(-) shadcn/ui components are used for UI elements
-(-) Environment variables are used for all secrets and configuration
-(-) TypeScript types are properly defined and used
-(-) Error handling is implemented at appropriate levels
-(-) RLS policies are in place for data security
-(-) Forms use react-hook-form with zod validation
-(-) Real-time features use Supabase subscriptions appropriately
-(-) Code follows the established naming conventions
-(-) Components are properly organized in the directory structure
+([]) Uses Next.js App Router with Server Components for data fetching
+([]) Server Actions are used for form submissions and data mutations
+([]) Supabase client is used correctly (server vs client context)
+([]) shadcn/ui components are used for UI elements
+([]) Environment variables are used for all secrets and configuration
+([]) TypeScript types are properly defined and used
+([]) Error handling is implemented at appropriate levels
+([]) RLS policies are in place for data security
+([]) Forms use react-hook-form with zod validation
+([]) Real-time features use Supabase subscriptions appropriately
+([]) Code follows the established naming conventions
+([]) Components are properly organized in the directory structure
 
 ## Common Anti-Patterns to Avoid
 ❌ Don't create API routes for simple CRUD operations that can use Server Actions

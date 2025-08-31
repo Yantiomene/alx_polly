@@ -1,56 +1,83 @@
-"use client"
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import { createServerComponentClient, createServerActionClient } from "@supabase/auth-helpers-nextjs";
+import CreatePollForm from "@/components/CreatePollForm";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { useAuth } from '@/components/auth-context';
+export default async function CreatePollPage() {
+  const supabase = createServerComponentClient({ cookies });
 
-export default function CreatePollPage() {
-  const { session, isLoading } = useAuth();
-  const router = useRouter();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  useEffect(() => {
-    if (!isLoading && !session) {
-      router.push('/login');
-    }
-  }, [session, isLoading, router]);
-
-  if (isLoading || !session) {
-    return <div className="flex justify-center items-center min-h-screen">Loading...</div>;
+  if (!user) {
+    redirect("/login");
   }
 
-  return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader>
-        <CardTitle>Create New Poll</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <form className="grid w-full items-center gap-4">
-          <div className="flex flex-col space-y-1.5">
-            <Label htmlFor="title">Poll Title</Label>
-            <Input id="title" placeholder="Enter your poll question" />
-          </div>
-          <div className="flex flex-col space-y-1.5">
-            <Label htmlFor="description">Description (Optional)</Label>
-            <Textarea id="description" placeholder="Add a description for your poll" />
-          </div>
-          <div className="flex flex-col space-y-1.5">
-            <Label htmlFor="option1">Option 1</Label>
-            <Input id="option1" placeholder="Option A" />
-          </div>
-          <div className="flex flex-col space-y-1.5">
-            <Label htmlFor="option2">Option 2</Label>
-            <Input id="option2" placeholder="Option B" />
-          </div>
-        </form>
-      </CardContent>
-      <CardFooter className="flex justify-end">
-        <Button>Create Poll</Button>
-      </CardFooter>
-    </Card>
-  );
+  async function createPollAction(formData: FormData) {
+    "use server";
+
+    const supabase = createServerActionClient({ cookies });
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      redirect("/login");
+    }
+
+    const title = String(formData.get("title") || "").trim();
+    const description = String(formData.get("description") || "").trim();
+    const allowMultipleVotes = formData.get("allow_multiple_votes") === "on";
+    const allowAnonymousVotes = formData.get("allow_anonymous_votes") === "on";
+    const startDateRaw = String(formData.get("start_date") || "").trim();
+    const endDateRaw = String(formData.get("end_date") || "").trim();
+
+    const optionValues = formData
+      .getAll("options[]")
+      .map((o) => String(o).trim())
+      .filter(Boolean);
+
+    if (!title || optionValues.length < 2) {
+      redirect("/create-poll?error=invalid_input");
+    }
+
+    const { data: poll, error: pollError } = await supabase
+      .from("polls")
+      .insert({
+        title,
+        description: description || null,
+        creator_id: user!.id,
+        is_public: true,
+        is_active: true,
+        allow_multiple_votes: allowMultipleVotes,
+        allow_anonymous_votes: allowAnonymousVotes,
+        ...(startDateRaw ? { start_date: startDateRaw } : {}),
+        ...(endDateRaw ? { end_date: endDateRaw } : {}),
+      })
+      .select("id")
+      .single();
+
+    if (pollError || !poll?.id) {
+      redirect("/create-poll?error=create_poll_failed");
+    }
+
+    const optionRows = optionValues.map((text, idx) => ({
+      poll_id: poll.id,
+      text,
+      order_index: idx,
+    }));
+
+    const { error: optionsError } = await supabase.from("poll_options").insert(optionRows);
+
+    if (optionsError) {
+      await supabase.from("polls").delete().eq("id", poll.id);
+      redirect("/create-poll?error=create_options_failed");
+    }
+
+    redirect("/polls");
+  }
+
+  return <CreatePollForm action={createPollAction} />;
 }
