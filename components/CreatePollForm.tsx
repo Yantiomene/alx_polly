@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 
 type CreateOrUpdateResult = { ok: boolean; pollId: string } | void;
 
+type OptionWithId = { id?: string | null; text: string };
+
 type InitialValues = {
   title?: string;
   description?: string | null;
@@ -17,7 +19,11 @@ type InitialValues = {
   end_date?: string | null;
   allow_multiple_votes?: boolean;
   allow_anonymous_votes?: boolean;
+  // New fields for edit form support
+  is_public?: boolean;
+  is_active?: boolean;
   options?: string[];
+  optionsWithIds?: { id: string; text: string }[];
 };
 
 type Props = {
@@ -33,12 +39,22 @@ export default function CreatePollForm({ action, titleText, submitLabel, success
   const router = useRouter();
   const error = searchParams.get("error");
 
-  const [options, setOptions] = useState<string[]>(() => initial?.options && initial.options.length >= 2 ? initial.options : ["", ""]);
+  const [options, setOptions] = useState<OptionWithId[]>(() => {
+    if (initial?.optionsWithIds && initial.optionsWithIds.length >= 2) {
+      return initial.optionsWithIds.map(o => ({ id: o.id, text: o.text }));
+    }
+    if (initial?.options && initial.options.length >= 2) {
+      return initial.options.map((t) => ({ text: t }));
+    }
+    return [{ text: "" }, { text: "" }];
+  });
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
   const allowMultipleDefault = initial?.allow_multiple_votes ?? false;
   const allowAnonymousDefault = initial?.allow_anonymous_votes ?? true;
+  const isPublicDefault = initial?.is_public ?? true;
+  const isActiveDefault = initial?.is_active ?? true;
 
   // Format timestamps (ISO or DB string) to input[type=datetime-local] value
   const formatForInput = (v?: string | null) => {
@@ -48,7 +64,7 @@ export default function CreatePollForm({ action, titleText, submitLabel, success
       // toISOString returns UTC; datetime-local expects YYYY-MM-DDTHH:mm
       return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
     } catch {
-      return v;
+      return v as string;
     }
   };
 
@@ -56,12 +72,12 @@ export default function CreatePollForm({ action, titleText, submitLabel, success
   const submitText = submitLabel ?? (initial ? "Save Changes" : "Create Poll");
   const successText = successMessage ?? (initial ? "Poll updated successfully! Redirecting to polls…" : "Poll created successfully! Redirecting to polls…");
 
-  const addOption = () => setOptions((prev) => [...prev, ""]);
+  const addOption = () => setOptions((prev) => [...prev, { text: "" }]);
   const removeOption = (index: number) => {
     setOptions((prev) => (prev.length > 2 ? prev.filter((_, i) => i !== index) : prev));
   };
   const updateOption = (index: number, value: string) => {
-    setOptions((prev) => prev.map((o, i) => (i === index ? value : o)));
+    setOptions((prev) => prev.map((o, i) => (i === index ? { ...o, text: value } : o)));
   };
 
   return (
@@ -133,6 +149,19 @@ export default function CreatePollForm({ action, titleText, submitLabel, success
             </label>
           </div>
 
+          {initial && (
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="is_public" className="h-4 w-4" defaultChecked={isPublicDefault} />
+                Public (visible to everyone)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="is_active" className="h-4 w-4" defaultChecked={isActiveDefault} />
+                Active (voting enabled)
+              </label>
+            </div>
+          )}
+
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label>Options</Label>
@@ -143,10 +172,12 @@ export default function CreatePollForm({ action, titleText, submitLabel, success
             <div className="space-y-2">
               {options.map((opt, idx) => (
                 <div key={idx} className="flex gap-2">
+                  {/* carry ID for diff-based update */}
+                  <input type="hidden" name="option_ids[]" value={opt.id ?? ""} />
                   <Input
                     name="options[]"
                     placeholder={`Option ${idx + 1}`}
-                    value={opt}
+                    value={opt.text}
                     onChange={(e) => updateOption(idx, e.target.value)}
                     required={idx < 2}
                   />
