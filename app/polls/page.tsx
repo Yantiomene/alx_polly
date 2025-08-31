@@ -15,6 +15,7 @@ type Poll = {
   description: string | null;
   creator_id: string;
   created_at: string;
+  is_active: boolean; // added
 };
 
 export default function PollsPage() {
@@ -41,7 +42,7 @@ export default function PollsPage() {
       const userId = session.user.id;
       const { data, error } = await supabase
         .from('polls')
-        .select('id, title, description, is_public, creator_id, created_at')
+        .select('id, title, description, is_public, is_active, creator_id, created_at') // include is_active
         .or(`is_public.eq.true,creator_id.eq.${userId}`)
         .order('created_at', { ascending: false });
 
@@ -55,6 +56,7 @@ export default function PollsPage() {
           description: p.description ?? null,
           creator_id: p.creator_id as string,
           created_at: p.created_at as string,
+          is_active: Boolean(p.is_active),
         })));
       }
       setLoadingPolls(false);
@@ -123,7 +125,16 @@ export default function PollsPage() {
         return (
           <Card key={poll.id}>
             <CardHeader>
-              <CardTitle>{poll.title}</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                {poll.title}
+                {poll.is_active && (
+                  <span
+                    className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500"
+                    title="Active"
+                    aria-label="Active"
+                  />
+                )}
+              </CardTitle>
               {poll.description && (
                 <CardDescription>{poll.description}</CardDescription>
               )}
