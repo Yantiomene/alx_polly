@@ -5,7 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/components/auth-context';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 
 export function Navbar() {
   const pathname = usePathname();
@@ -13,11 +13,27 @@ export function Navbar() {
   const router = useRouter();
   const supabase = createClientComponentClient();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const handleLogout = async () => {
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (!menuRef.current) return;
+      if (!menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    if (menuOpen) {
+      document.addEventListener('mousedown', onDocClick);
+    }
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [menuOpen]);
+
+  const handleLogout = async () => { 
     try {
       setLoggingOut(true);
       await supabase.auth.signOut();
+      setMenuOpen(false);
       router.push('/');
     } finally {
       setLoggingOut(false);
@@ -53,16 +69,33 @@ export function Navbar() {
       {session ? (
         <div className="flex items-center gap-2 md:gap-4">
           {userInitial && (
-            <div
-              aria-label="User initial"
-              className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-semibold select-none"
-            >
-              {userInitial}
+            <div ref={menuRef} className="relative">
+              <button
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((v) => !v)}
+                className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-semibold select-none focus:outline-none focus:ring-2 focus:ring-primary/40"
+                title="Account"
+              >
+                {userInitial}
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 mt-2 w-44 rounded-md border border-input bg-white shadow-md dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="py-1">
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start text-red-600 hover:text-red-700 dark:text-red-400"
+                      onClick={handleLogout}
+                      disabled={loggingOut}
+                    >
+                      {loggingOut ? 'Logging out…' : 'Logout'}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
-          <Button variant="outline" className="text-base text-zinc-900 dark:text-zinc-100" onClick={handleLogout} disabled={loggingOut}>
-            {loggingOut ? 'Logging out…' : 'Logout'}
-          </Button>
         </div>
       ) : (
         <div className="flex gap-2 md:gap-4">
