@@ -19,6 +19,26 @@ type Poll = {
   end_date: string | null; // added
 };
 
+function formatRemaining(endDateISO: string, now: Date): string {
+  const endMs = new Date(endDateISO).getTime();
+  let diff = Math.max(0, endMs - now.getTime());
+  if (diff <= 0) return 'Ended';
+  let seconds = Math.floor(diff / 1000);
+  const days = Math.floor(seconds / 86400);
+  seconds %= 86400;
+  const hours = Math.floor(seconds / 3600);
+  seconds %= 3600;
+  const minutes = Math.floor(seconds / 60);
+  seconds %= 60;
+
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  parts.push(`${hours}h`);
+  parts.push(`${minutes}m`);
+  parts.push(`${seconds}s`);
+  return parts.join(' ');
+}
+
 export default function PollsPage() {
   const { session, isLoading } = useAuth();
   const router = useRouter();
@@ -28,6 +48,12 @@ export default function PollsPage() {
   const [loadingPolls, setLoadingPolls] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [now, setNow] = useState<Date>(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!isLoading && !session) {
@@ -72,9 +98,9 @@ export default function PollsPage() {
   // Auto-deactivate expired polls owned by the current user
   useEffect(() => {
     if (!session || loadingPolls) return;
-    const now = new Date();
+    const nowLocal = new Date();
     const toDeactivate = polls
-      .filter((p) => p.is_active && p.end_date && new Date(p.end_date) <= now && p.creator_id === session.user.id)
+      .filter((p) => p.is_active && p.end_date && new Date(p.end_date) <= nowLocal && p.creator_id === session.user.id)
       .map((p) => p.id);
     if (toDeactivate.length === 0) return;
 
@@ -145,9 +171,9 @@ export default function PollsPage() {
 
       {!loadingPolls && !error && polls.map((poll) => {
         const isOwner = poll.creator_id === session.user.id;
-        const now = new Date();
         const expired = !!(poll.end_date && new Date(poll.end_date) <= now);
         const effectiveActive = poll.is_active && !expired;
+        const showCountdown = effectiveActive && !!poll.end_date;
         return (
           <Card key={poll.id}>
             <CardHeader>
@@ -161,6 +187,11 @@ export default function PollsPage() {
               </CardTitle>
               {poll.description && (
                 <CardDescription>{poll.description}</CardDescription>
+              )}
+              {showCountdown && poll.end_date && (
+                <div className="text-sm text-muted-foreground">
+                  Ends in {formatRemaining(poll.end_date, now)}
+                </div>
               )}
             </CardHeader>
             <CardContent className="flex items-center gap-2">
