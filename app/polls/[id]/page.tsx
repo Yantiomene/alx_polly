@@ -89,6 +89,44 @@ export default async function PollDetailPage({
     notFound();
   }
 
+  // Determine if the current viewer has already voted
+  let alreadyVoted = false;
+  if (user?.id) {
+    const { data: existing } = await supabase
+      .from("votes")
+      .select("id")
+      .eq("poll_id", pollRow.id)
+      .eq("voter_id", user.id)
+      .limit(1);
+    alreadyVoted = Boolean(existing && existing.length > 0);
+  } else {
+    const cookieStore = await cookies();
+    alreadyVoted = cookieStore.get(`voted_poll_${pollRow.id}`)?.value === "1";
+  }
+
+  const voted = searchParams?.voted === "1";
+  // removed unused 'duplicate'
+  const voteError = typeof searchParams?.vote_error === "string" ? (searchParams?.vote_error as string) : undefined;
+  const voteErrorCode = typeof searchParams?.code === "string" ? (searchParams?.code as string) : undefined;
+
+  // Compute analytics counts
+  const countsMap = new Map<string, number>();
+  if (!votesError && votes && votes.length) {
+    for (const v of votes) {
+      const prev = countsMap.get(v.option_id) || 0;
+      countsMap.set(v.option_id, prev + 1);
+    }
+  } else {
+    for (const opt of options || []) {
+      countsMap.set(opt.id, Number(opt.vote_count ?? 0));
+    }
+  }
+  const totalVotes = Array.from(countsMap.values()).reduce((acc, n) => acc + n, 0);
+
+  const canVote = pollRow.is_active && options.length > 0 && (pollRow.allow_multiple_votes || !alreadyVoted);
+  const showResults = isOwner || voted || alreadyVoted;
+  const showForm = !showResults && canVote;
+
   async function submitVoteAction(formData: FormData) {
     "use server";
 
@@ -117,6 +155,27 @@ export default async function PollDetailPage({
       redirect(`/polls/${params.id}?vote_error=invalid`);
     }
 
+    // Prevent duplicate vote when multiple votes are not allowed
+    if (!pollRow.allow_multiple_votes) {
+      if (user?.id) {
+        const { data: existing } = await supabase
+          .from("votes")
+          .select("id")
+          .eq("poll_id", pollRow.id)
+          .eq("voter_id", user.id)
+          .limit(1);
+        if (existing && existing.length > 0) {
+          redirect(`/polls/${params.id}?voted=1&dup=1`);
+        }
+      } else {
+        const cookieStore = await cookies();
+        const hasCookie = cookieStore.get(`voted_poll_${pollRow.id}`)?.value === "1";
+        if (hasCookie) {
+          redirect(`/polls/${params.id}?voted=1&dup=1`);
+        }
+      }
+    }
+
     const { error: insErr } = await supabase.from("votes").insert({
       poll_id: pollRow.id,
       option_id: optionId,
@@ -132,26 +191,14 @@ export default async function PollDetailPage({
       redirect(`/polls/${params.id}?vote_error=save_failed&code=${encodeURIComponent(String(code))}`);
     }
 
+    // Mark anonymous users as having voted using a cookie
+    if (!user?.id) {
+      const cookieStore = await cookies();
+      cookieStore.set(`voted_poll_${pollRow.id}`, "1", { path: "/", maxAge: 60 * 60 * 24 * 365 });
+    }
+
     redirect(`/polls/${params.id}?voted=1`);
   }
-
-  const voted = searchParams?.voted === "1";
-  const voteError = typeof searchParams?.vote_error === "string" ? (searchParams?.vote_error as string) : undefined;
-  const voteErrorCode = typeof searchParams?.code === "string" ? (searchParams?.code as string) : undefined;
-
-  // Prepare analytics. Prefer live aggregation from votes; fallback to poll_options.vote_count
-  const countsMap = new Map<string, number>();
-  if (!votesError && votes && votes.length) {
-    for (const v of votes) {
-      const prev = countsMap.get(v.option_id) || 0;
-      countsMap.set(v.option_id, prev + 1);
-    }
-  } else {
-    for (const opt of options || []) {
-      countsMap.set(opt.id, Number(opt.vote_count ?? 0));
-    }
-  }
-  const totalVotes = Array.from(countsMap.values()).reduce((acc, n) => acc + n, 0);
 
   return (
     <div className="space-y-6">
@@ -211,8 +258,7 @@ export default async function PollDetailPage({
             )}
           </div>
 
-          {/* Voting UI */}
-          {!voted ? (
+          {showForm ? (
             <div className="pt-2 space-y-4">
               {voteError && (
                 <div className="mb-3 text-red-600">
@@ -278,7 +324,10 @@ export default async function PollDetailPage({
             </div>
           ) : (
             <div className="pt-2 space-y-4">
-              <div className="mb-3 text-emerald-700">Thank you for voting!</div>
+              {voted && <div className="mb-3 text-emerald-700">Thank you for voting!</div>}
+              {!voted && alreadyVoted && (
+                <div className="mb-3 text-blue-700">You have already voted on this poll.</div>
+              )}
               <div>
                 <h3 className="text-lg font-semibold mb-2">Results</h3>
                 {votesError ? (
