@@ -15,7 +15,8 @@ type Poll = {
   description: string | null;
   creator_id: string;
   created_at: string;
-  is_active: boolean; // added
+  is_active: boolean;
+  end_date: string | null; // added
 };
 
 export default function PollsPage() {
@@ -42,7 +43,7 @@ export default function PollsPage() {
       const userId = session.user.id;
       const { data, error } = await supabase
         .from('polls')
-        .select('id, title, description, is_public, is_active, creator_id, created_at') // include is_active
+        .select('id, title, description, is_public, is_active, creator_id, created_at, end_date')
         .or(`is_public.eq.true,creator_id.eq.${userId}`)
         .order('created_at', { ascending: false });
 
@@ -57,6 +58,7 @@ export default function PollsPage() {
           creator_id: p.creator_id as string,
           created_at: p.created_at as string,
           is_active: Boolean(p.is_active),
+          end_date: p.end_date ?? null,
         })));
       }
       setLoadingPolls(false);
@@ -66,6 +68,27 @@ export default function PollsPage() {
       loadPolls();
     }
   }, [isLoading, session, supabase]);
+
+  // Auto-deactivate expired polls owned by the current user
+  useEffect(() => {
+    if (!session || loadingPolls) return;
+    const now = new Date();
+    const toDeactivate = polls
+      .filter((p) => p.is_active && p.end_date && new Date(p.end_date) <= now && p.creator_id === session.user.id)
+      .map((p) => p.id);
+    if (toDeactivate.length === 0) return;
+
+    (async () => {
+      const { error } = await supabase
+        .from('polls')
+        .update({ is_active: false })
+        .in('id', toDeactivate)
+        .eq('creator_id', session.user.id);
+      if (!error) {
+        setPolls((prev) => prev.map((p) => (toDeactivate.includes(p.id) ? { ...p, is_active: false } : p)));
+      }
+    })();
+  }, [session, loadingPolls, polls, supabase]);
 
   async function handleDelete(poll: Poll) {
     if (!session) return;
@@ -122,18 +145,19 @@ export default function PollsPage() {
 
       {!loadingPolls && !error && polls.map((poll) => {
         const isOwner = poll.creator_id === session.user.id;
+        const now = new Date();
+        const expired = !!(poll.end_date && new Date(poll.end_date) <= now);
+        const effectiveActive = poll.is_active && !expired;
         return (
           <Card key={poll.id}>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 {poll.title}
-                {poll.is_active && (
-                  <span
-                    className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500"
-                    title="Active"
-                    aria-label="Active"
-                  />
-                )}
+                <span
+                  className={`inline-block h-2.5 w-2.5 rounded-full ${effectiveActive ? 'bg-emerald-500' : 'bg-red-500'}`}
+                  title={effectiveActive ? 'Active' : 'Inactive'}
+                  aria-label={effectiveActive ? 'Active' : 'Inactive'}
+                />
               </CardTitle>
               {poll.description && (
                 <CardDescription>{poll.description}</CardDescription>

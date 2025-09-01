@@ -67,6 +67,55 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     redirect("/polls?error=forbidden");
   }
 
+  // Compute remaining/scheduling status message
+  function formatDistance(ms: number) {
+    const totalSec = Math.max(0, Math.floor(ms / 1000));
+    const days = Math.floor(totalSec / 86400);
+    const hours = Math.floor((totalSec % 86400) / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const parts: string[] = [];
+    if (days) parts.push(`${days}d`);
+    if (hours || days) parts.push(`${hours}h`);
+    parts.push(`${minutes}m`);
+    return parts.join(" ");
+  }
+
+  const now = new Date();
+  const start = pollRow.start_date ? new Date(pollRow.start_date) : null;
+  const end = pollRow.end_date ? new Date(pollRow.end_date) : null;
+
+  let statusLabel = "";
+  let statusClass = "text-muted-foreground";
+
+  if (pollRow.is_active) {
+    if (start && now < start) {
+      statusLabel = `Starts in ${formatDistance(start.getTime() - now.getTime())}`;
+      statusClass = "text-amber-600";
+    } else if (end) {
+      if (now < end) {
+        statusLabel = `Time remaining: ${formatDistance(end.getTime() - now.getTime())}`;
+        statusClass = "text-emerald-700";
+      } else {
+        statusLabel = `Ended ${formatDistance(now.getTime() - end.getTime())} ago`;
+        statusClass = "text-muted-foreground";
+      }
+    } else {
+      statusLabel = "No end date set";
+      statusClass = "text-muted-foreground";
+    }
+  } else {
+    if (start && now < start) {
+      statusLabel = `Scheduled to start in ${formatDistance(start.getTime() - now.getTime())}`;
+      statusClass = "text-blue-700";
+    } else if (end && now >= end) {
+      statusLabel = `Ended ${formatDistance(now.getTime() - end.getTime())} ago`;
+      statusClass = "text-muted-foreground";
+    } else {
+      statusLabel = "Poll is inactive";
+      statusClass = "text-muted-foreground";
+    }
+  }
+
   async function updatePollAction(formData: FormData) {
     "use server";
 
@@ -176,23 +225,34 @@ export default async function EditPollPage({ params }: { params: { id: string } 
   }
 
   return (
-    <CreatePollForm
-      action={updatePollAction}
-      initial={{
-        title: pollRow.title,
-        description: pollRow.description,
-        start_date: pollRow.start_date as any,
-        end_date: pollRow.end_date as any,
-        allow_multiple_votes: pollRow.allow_multiple_votes as any,
-        allow_anonymous_votes: pollRow.allow_anonymous_votes as any,
-        is_public: pollRow.is_public,
-        is_active: pollRow.is_active,
-        optionsWithIds: (options || []).map((o: OptionRow) => ({ id: o.id, text: o.text })),
-        options: (options || []).map((o: OptionRow) => o.text),
-      }}
-      titleText="Edit Poll"
-      submitLabel="Save Changes"
-      successMessage="Poll updated successfully! Redirecting to polls…"
-    />
+    <div className="space-y-4">
+      <div className={`rounded-md border p-3 text-sm ${statusClass}`}>
+        {statusLabel}
+        {start && (
+          <span className="block text-xs text-muted-foreground">Starts: {start.toLocaleString()}</span>
+        )}
+        {end && (
+          <span className="block text-xs text-muted-foreground">Ends: {end.toLocaleString()}</span>
+        )}
+      </div>
+      <CreatePollForm
+        action={updatePollAction}
+        initial={{
+          title: pollRow.title,
+          description: pollRow.description,
+          start_date: pollRow.start_date as any,
+          end_date: pollRow.end_date as any,
+          allow_multiple_votes: pollRow.allow_multiple_votes as any,
+          allow_anonymous_votes: pollRow.allow_anonymous_votes as any,
+          is_public: pollRow.is_public,
+          is_active: pollRow.is_active,
+          optionsWithIds: (options || []).map((o: OptionRow) => ({ id: o.id, text: o.text })),
+          options: (options || []).map((o: OptionRow) => o.text),
+        }}
+        titleText="Edit Poll"
+        submitLabel="Save Changes"
+        successMessage="Poll updated successfully! Redirecting to polls…"
+      />
+    </div>
   );
 }
