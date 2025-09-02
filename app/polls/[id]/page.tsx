@@ -29,7 +29,7 @@ type OptionRow = {
 
 type VoteRow = { option_id: string };
 
-async function getPollWithOptions(
+export async function getPollWithOptions(
   pollId: string
 ): Promise<{ poll: PollRow | null; options: OptionRow[]; votes: VoteRow[]; votesError: boolean }> {
   const supabase = createServerComponentClient({ cookies });
@@ -367,4 +367,17 @@ export default async function PollDetailPage({
       </Card>
     </div>
   );
+}
+
+export function shouldBlockVoteWhenSingleAllowed(
+  poll: Pick<PollRow, "allow_multiple_votes">,
+  alreadyVoted: boolean
+): boolean {
+  return !poll.allow_multiple_votes && alreadyVoted;
+}
+
+export function isAnonymousVoteAllowed(
+  poll: Pick<PollRow, "allow_anonymous_votes">
+): boolean {
+  return !!poll.allow_anonymous_votes;
 }

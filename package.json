@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "vitest"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.7",
@@ -30,6 +31,11 @@
     "@types/react-dom": "^19",
     "@types/three": "^0.179.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^2.0.5"
+  },
+  "vitest": {
+    "environment": "node",
+    "globals": true
   }
 }
