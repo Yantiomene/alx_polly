@@ -3,25 +3,7 @@ import { redirect } from "next/navigation";
 import { createServerComponentClient, createServerActionClient } from "@supabase/auth-helpers-nextjs";
 import CreatePollForm from "@/components/CreatePollForm";
 
-// Explicit row types to help TS inference
-type PollRow = {
-  id: string;
-  title: string;
-  description: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  allow_multiple_votes: boolean;
-  allow_anonymous_votes: boolean;
-  is_public: boolean;
-  is_active: boolean;
-  creator_id: string;
-};
-
-type OptionRow = {
-  id: string;
-  text: string;
-  order_index: number;
-};
+import type { PollRow, OptionRow } from "@/lib/types";
 
 async function getPollWithOptions(
   supabase: ReturnType<typeof createServerComponentClient>,
@@ -80,41 +62,47 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     return parts.join(" ");
   }
 
-  const now = new Date();
+  const nowMs = Date.now();
   const start = pollRow.start_date ? new Date(pollRow.start_date) : null;
   const end = pollRow.end_date ? new Date(pollRow.end_date) : null;
 
-  let statusLabel = "";
-  let statusClass = "text-muted-foreground";
+  function computeStatus(): { label: string; className: string } {
+    let label = "";
+    let className = "text-muted-foreground";
 
-  if (pollRow.is_active) {
-    if (start && now < start) {
-      statusLabel = `Starts in ${formatDistance(start.getTime() - now.getTime())}`;
-      statusClass = "text-amber-600";
-    } else if (end) {
-      if (now < end) {
-        statusLabel = `Time remaining: ${formatDistance(end.getTime() - now.getTime())}`;
-        statusClass = "text-emerald-700";
+    if (pollRow.is_active) {
+      if (start && nowMs < start.getTime()) {
+        label = `Starts in ${formatDistance(start.getTime() - nowMs)}`;
+        className = "text-amber-600";
+      } else if (end) {
+        if (nowMs < end.getTime()) {
+          label = `Time remaining: ${formatDistance(end.getTime() - nowMs)}`;
+          className = "text-emerald-700";
+        } else {
+          label = `Ended ${formatDistance(nowMs - end.getTime())} ago`;
+          className = "text-muted-foreground";
+        }
       } else {
-        statusLabel = `Ended ${formatDistance(now.getTime() - end.getTime())} ago`;
-        statusClass = "text-muted-foreground";
+        label = "No end date set";
+        className = "text-muted-foreground";
       }
     } else {
-      statusLabel = "No end date set";
-      statusClass = "text-muted-foreground";
+      if (start && nowMs < start.getTime()) {
+        label = `Scheduled to start in ${formatDistance(start.getTime() - nowMs)}`;
+        className = "text-blue-700";
+      } else if (end && nowMs >= end.getTime()) {
+        label = `Ended ${formatDistance(nowMs - end.getTime())} ago`;
+        className = "text-muted-foreground";
+      } else {
+        label = "Poll is inactive";
+        className = "text-muted-foreground";
+      }
     }
-  } else {
-    if (start && now < start) {
-      statusLabel = `Scheduled to start in ${formatDistance(start.getTime() - now.getTime())}`;
-      statusClass = "text-blue-700";
-    } else if (end && now >= end) {
-      statusLabel = `Ended ${formatDistance(now.getTime() - end.getTime())} ago`;
-      statusClass = "text-muted-foreground";
-    } else {
-      statusLabel = "Poll is inactive";
-      statusClass = "text-muted-foreground";
-    }
+
+    return { label, className };
   }
+
+  const { label: statusLabel, className: statusClass } = computeStatus();
 
   async function updatePollAction(formData: FormData) {
     "use server";
@@ -176,7 +164,8 @@ export default async function EditPollPage({ params }: { params: { id: string } 
       redirect(`/polls/${pollId}/edit?error=update_options_failed`);
     }
 
-    const existingById = new Map((existing || []).map((o) => [o.id, o] as const));
+    // Removed unused existingById map for clarity
+    // const existingById = new Map((existing || []).map((o) => [o.id, o] as const));
     const submittedIds = new Set(submitted.filter((s) => !!s.id).map((s) => s.id as string));
 
     // Deletes: existing options whose id not in submitted
