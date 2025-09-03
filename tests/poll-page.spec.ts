@@ -24,6 +24,22 @@ import { getPollWithOptionsById } from '../lib/polls'
 import { shouldBlockVoteWhenSingleAllowed, isAnonymousVoteAllowed } from '../lib/vote-rules'
 import type { PollRow } from '../lib/types'
 
+function buildPoll(overrides: Partial<PollRow> = {}): PollRow {
+  return {
+    id: 'test-poll',
+    title: 'Test Poll',
+    description: null,
+    start_date: null,
+    end_date: null,
+    allow_multiple_votes: false,
+    allow_anonymous_votes: false,
+    is_public: true,
+    is_active: true,
+    creator_id: 'test-user',
+    ...overrides,
+  }
+}
+
 describe('getPollWithOptionsById', () => {
   beforeEach(() => {
     mockClient = {
@@ -163,7 +179,7 @@ describe('getPollWithOptionsById', () => {
 
 describe('shouldBlockVoteWhenSingleAllowed', () => {
   it('blocks when multiple votes not allowed and already voted', () => {
-    expect(shouldBlockVoteWhenSingleAllowed({ allow_multiple_votes: false }, true)).toBe(true)
+    expect(shouldBlockVoteWhenSingleAllowed(buildPoll({ allow_multiple_votes: false }), true)).toBe(true)
   })
   it('does not block when multiple votes allowed, even if already voted', () => {
     expect(shouldBlockVoteWhenSingleAllowed(buildPoll({ allow_multiple_votes: true }), true)).toBe(false)
