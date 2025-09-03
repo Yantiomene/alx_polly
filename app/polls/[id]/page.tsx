@@ -5,63 +5,18 @@ import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { randomUUID } from "crypto";
-
-// Row types for clarity
-type PollRow = {
-  id: string;
-  title: string;
-  description: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  allow_multiple_votes: boolean;
-  allow_anonymous_votes: boolean;
-  is_public: boolean;
-  is_active: boolean;
-  creator_id: string;
-};
-
-type OptionRow = {
-  id: string;
-  text: string;
-  order_index: number;
-  vote_count?: number; // from schema
-};
-
-type VoteRow = { option_id: string };
-
-export async function getPollWithOptions(
-  pollId: string
-): Promise<{ poll: PollRow | null; options: OptionRow[]; votes: VoteRow[]; votesError: boolean }> {
-  const supabase = createServerComponentClient({ cookies });
-
-  const { data: poll, error: pollError } = await supabase
-    .from("polls")
-    .select(
-      "id, title, description, start_date, end_date, allow_multiple_votes, allow_anonymous_votes, is_public, is_active, creator_id"
-    )
-    .eq("id", pollId)
-    .single();
-
-  if (pollError || !poll) return { poll: null, options: [], votes: [], votesError: false };
-
-  const { data: options } = await supabase
-    .from("poll_options")
-    .select("id, text, order_index, vote_count")
-    .eq("poll_id", pollId)
-    .order("order_index", { ascending: true });
-
-  const { data: votesData, error: vErr } = await supabase
-    .from("votes")
-    .select("option_id")
-    .eq("poll_id", pollId);
-
-  return {
-    poll: poll as PollRow,
-    options: (options || []) as OptionRow[],
-    votes: (votesData || []) as VoteRow[],
-    votesError: Boolean(vErr),
-  };
-}
+import type { PollRow, OptionRow, VoteRow } from "@/lib/types";
+import {
+  getPollWithOptionsById,
+  hasAlreadyVoted,
+  computeCounts,
+  getVoteCookieKey,
+} from "@/lib/polls";
+import {
+  shouldBlockVoteWhenSingleAllowed,
+  isAnonymousVoteAllowed,
+  canVote,
+} from "@/lib/vote-rules";
 
 export default async function PollDetailPage({
   params,
@@ -76,7 +31,7 @@ export default async function PollDetailPage({
   } = await supabase.auth.getUser();
 
   const pollId = params.id;
-  const { poll, options, votes, votesError } = await getPollWithOptions(pollId);
+  const { poll, options, votes, votesError } = await getPollWithOptionsById(supabase as any, pollId);
 
   if (!poll) {
     notFound();
@@ -90,42 +45,24 @@ export default async function PollDetailPage({
   }
 
   // Determine if the current viewer has already voted
-  let alreadyVoted = false;
-  if (user?.id) {
-    const { data: existing } = await supabase
-      .from("votes")
-      .select("id")
-      .eq("poll_id", pollRow.id)
-      .eq("voter_id", user.id)
-      .limit(1);
-    alreadyVoted = Boolean(existing && existing.length > 0);
-  } else {
-    const cookieStore = await cookies();
-    alreadyVoted = cookieStore.get(`voted_poll_${pollRow.id}`)?.value === "1";
-  }
+  const cookieStore = await cookies();
+  const alreadyVoted = await hasAlreadyVoted(
+    supabase as any,
+    pollRow.id,
+    user?.id ?? null,
+    cookieStore as any
+  );
 
   const voted = searchParams?.voted === "1";
-  // removed unused 'duplicate'
   const voteError = typeof searchParams?.vote_error === "string" ? (searchParams?.vote_error as string) : undefined;
   const voteErrorCode = typeof searchParams?.code === "string" ? (searchParams?.code as string) : undefined;
 
-  // Compute analytics counts
-  const countsMap = new Map<string, number>();
-  if (!votesError && votes && votes.length) {
-    for (const v of votes) {
-      const prev = countsMap.get(v.option_id) || 0;
-      countsMap.set(v.option_id, prev + 1);
-    }
-  } else {
-    for (const opt of options || []) {
-      countsMap.set(opt.id, Number(opt.vote_count ?? 0));
-    }
-  }
-  const totalVotes = Array.from(countsMap.values()).reduce((acc, n) => acc + n, 0);
+  // Compute analytics counts once
+  const { countsMap, totalVotes } = computeCounts(options as OptionRow[], votes as VoteRow[], !!votesError);
 
-  const canVote = pollRow.is_active && options.length > 0 && (pollRow.allow_multiple_votes || !alreadyVoted);
+  const canVoteNow = canVote(pollRow, options.length, alreadyVoted);
   const showResults = isOwner || voted || alreadyVoted;
-  const showForm = !showResults && canVote;
+  const showForm = !showResults && canVoteNow;
 
   async function submitVoteAction(formData: FormData) {
     "use server";
@@ -146,7 +83,7 @@ export default async function PollDetailPage({
       redirect(`/polls/${params.id}?vote_error=inactive`);
     }
 
-    if (!pollRow.allow_anonymous_votes && !user) {
+    if (!isAnonymousVoteAllowed(pollRow) && !user) {
       redirect(`/login?next=/polls/${params.id}`);
     }
 
@@ -157,22 +94,15 @@ export default async function PollDetailPage({
 
     // Prevent duplicate vote when multiple votes are not allowed
     if (!pollRow.allow_multiple_votes) {
-      if (user?.id) {
-        const { data: existing } = await supabase
-          .from("votes")
-          .select("id")
-          .eq("poll_id", pollRow.id)
-          .eq("voter_id", user.id)
-          .limit(1);
-        if (existing && existing.length > 0) {
-          redirect(`/polls/${params.id}?voted=1&dup=1`);
-        }
-      } else {
-        const cookieStore = await cookies();
-        const hasCookie = cookieStore.get(`voted_poll_${pollRow.id}`)?.value === "1";
-        if (hasCookie) {
-          redirect(`/polls/${params.id}?voted=1&dup=1`);
-        }
+      const cookieStore = await cookies();
+      const alreadyVotedNow = await hasAlreadyVoted(
+        supabase as any,
+        pollRow.id,
+        user?.id ?? null,
+        cookieStore as any
+      );
+      if (shouldBlockVoteWhenSingleAllowed(pollRow, alreadyVotedNow)) {
+        redirect(`/polls/${params.id}?voted=1&dup=1`);
       }
     }
 
@@ -194,11 +124,44 @@ export default async function PollDetailPage({
     // Mark anonymous users as having voted using a cookie
     if (!user?.id) {
       const cookieStore = await cookies();
-      cookieStore.set(`voted_poll_${pollRow.id}`, "1", { path: "/", maxAge: 60 * 60 * 24 * 365 });
+      cookieStore.set(getVoteCookieKey(pollRow.id), "1", { path: "/", maxAge: 60 * 60 * 24 * 365 });
     }
 
     redirect(`/polls/${params.id}?voted=1`);
   }
+
+  const resultsSection = (
+    <div>
+      <h3 className="text-lg font-semibold mb-2">Results</h3>
+      {votesError ? (
+        <p className="text-amber-600">Results are currently unavailable due to permissions. Falling back to cached counts.</p>
+      ) : null}
+      {options.length === 0 ? (
+        <p className="text-muted-foreground">No options to show results for.</p>
+      ) : (
+        <div className="space-y-2">
+          {options.map((opt: OptionRow) => {
+            const c = countsMap.get(opt.id) || 0;
+            const pct = totalVotes > 0 ? Math.round((c / totalVotes) * 100) : 0;
+            return (
+              <div key={opt.id} className="space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span>{opt.text}</span>
+                  <span>
+                    {c} ({pct}%)
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-200 rounded">
+                  <div className="h-2 bg-emerald-500 rounded" style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            );
+          })}
+          <div className="text-sm text-muted-foreground">Total votes: {totalVotes}</div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -251,7 +214,7 @@ export default async function PollDetailPage({
               <p className="text-muted-foreground">No options available.</p>
             ) : (
               <ul className="list-disc pl-6 space-y-1">
-                {options.map((opt) => (
+                {options.map((opt: OptionRow) => (
                   <li key={opt.id}>{opt.text}</li>
                 ))}
               </ul>
@@ -278,7 +241,7 @@ export default async function PollDetailPage({
               <form action={submitVoteAction} className="space-y-3">
                 <input type="hidden" name="poll_id" value={pollRow.id} />
                 <fieldset disabled={!pollRow.is_active || options.length === 0} className="space-y-2">
-                  {options.map((opt) => (
+                  {options.map((opt: OptionRow) => (
                     <label key={opt.id} className="flex items-center gap-2">
                       <input type="radio" name="option_id" value={opt.id} required className="h-4 w-4" />
                       <span>{opt.text}</span>
@@ -291,36 +254,7 @@ export default async function PollDetailPage({
               </form>
 
               {/* Creator can see results without voting */}
-              {isOwner && (
-                <div className="pt-4">
-                  <h3 className="text-lg font-semibold mb-2">Results</h3>
-                  {votesError ? (
-                    <p className="text-amber-600">Results are currently unavailable due to permissions. Falling back to cached counts.</p>
-                  ) : null}
-                  {options.length === 0 ? (
-                    <p className="text-muted-foreground">No options to show results for.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {options.map((opt) => {
-                        const c = countsMap.get(opt.id) || 0;
-                        const pct = totalVotes > 0 ? Math.round((c / totalVotes) * 100) : 0;
-                        return (
-                          <div key={opt.id} className="space-y-1">
-                            <div className="flex justify-between text-sm">
-                              <span>{opt.text}</span>
-                              <span>{c} ({pct}%)</span>
-                            </div>
-                            <div className="h-2 bg-gray-200 rounded">
-                              <div className="h-2 bg-emerald-500 rounded" style={{ width: `${pct}%` }} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <div className="text-sm text-muted-foreground">Total votes: {totalVotes}</div>
-                    </div>
-                  )}
-                </div>
-              )}
+              {isOwner && <div className="pt-4">{resultsSection}</div>}
             </div>
           ) : (
             <div className="pt-2 space-y-4">
@@ -328,34 +262,7 @@ export default async function PollDetailPage({
               {!voted && alreadyVoted && (
                 <div className="mb-3 text-blue-700">You have already voted on this poll.</div>
               )}
-              <div>
-                <h3 className="text-lg font-semibold mb-2">Results</h3>
-                {votesError ? (
-                  <p className="text-amber-600">Results are currently unavailable due to permissions. Falling back to cached counts.</p>
-                ) : null}
-                {options.length === 0 ? (
-                  <p className="text-muted-foreground">No options to show results for.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {options.map((opt) => {
-                      const c = countsMap.get(opt.id) || 0;
-                      const pct = totalVotes > 0 ? Math.round((c / totalVotes) * 100) : 0;
-                      return (
-                        <div key={opt.id} className="space-y-1">
-                          <div className="flex justify-between text-sm">
-                            <span>{opt.text}</span>
-                            <span>{c} ({pct}%)</span>
-                          </div>
-                          <div className="h-2 bg-gray-200 rounded">
-                            <div className="h-2 bg-emerald-500 rounded" style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      );
-                    })}
-                    <div className="text-sm text-muted-foreground">Total votes: {totalVotes}</div>
-                  </div>
-                )}
-              </div>
+              {resultsSection}
               <div className="flex items-center gap-2">
                 <Link href="/polls">
                   <Button variant="secondary">Back to Polls</Button>
@@ -367,17 +274,4 @@ export default async function PollDetailPage({
       </Card>
     </div>
   );
-}
-
-export function shouldBlockVoteWhenSingleAllowed(
-  poll: Pick<PollRow, "allow_multiple_votes">,
-  alreadyVoted: boolean
-): boolean {
-  return !poll.allow_multiple_votes && alreadyVoted;
-}
-
-export function isAnonymousVoteAllowed(
-  poll: Pick<PollRow, "allow_anonymous_votes">
-): boolean {
-  return !!poll.allow_anonymous_votes;
 }

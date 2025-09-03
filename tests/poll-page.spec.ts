@@ -20,9 +20,11 @@ vi.mock('@supabase/auth-helpers-nextjs', () => ({
 }))
 
 // Import after mocks
-import { getPollWithOptions, shouldBlockVoteWhenSingleAllowed, isAnonymousVoteAllowed } from '../app/polls/[id]/page'
+import { getPollWithOptionsById } from '../lib/polls'
+import { shouldBlockVoteWhenSingleAllowed, isAnonymousVoteAllowed } from '../lib/vote-rules'
+import type { PollRow } from '../lib/types'
 
-describe('getPollWithOptions', () => {
+describe('getPollWithOptionsById', () => {
   beforeEach(() => {
     mockClient = {
       from: (table: string) => {
@@ -51,7 +53,7 @@ describe('getPollWithOptions', () => {
       throw new Error('Should not query other tables when poll not found')
     }
 
-    const result = await getPollWithOptions(pollId)
+    const result = await getPollWithOptionsById(mockClient, pollId)
     expect(result.poll).toBeNull()
     expect(result.options).toEqual([])
     expect(result.votes).toEqual([])
@@ -102,7 +104,7 @@ describe('getPollWithOptions', () => {
       throw new Error('Unexpected table: ' + table)
     }
 
-    const result = await getPollWithOptions(pollId)
+    const result = await getPollWithOptionsById(mockClient, pollId)
     expect(result.poll).toEqual(pollRow)
     expect(result.options).toEqual(optionsRows)
     expect(result.votes).toEqual(votesRows)
@@ -149,7 +151,7 @@ describe('getPollWithOptions', () => {
       throw new Error('Unexpected table: ' + table)
     }
 
-    const result = await getPollWithOptions(pollId)
+    const result = await getPollWithOptionsById(mockClient, pollId)
     expect(result.poll).toEqual(pollRow)
     expect(result.options).toEqual(optionsRows)
     expect(result.votes).toEqual([])
@@ -164,18 +166,18 @@ describe('shouldBlockVoteWhenSingleAllowed', () => {
     expect(shouldBlockVoteWhenSingleAllowed({ allow_multiple_votes: false }, true)).toBe(true)
   })
   it('does not block when multiple votes allowed, even if already voted', () => {
-    expect(shouldBlockVoteWhenSingleAllowed({ allow_multiple_votes: true }, true)).toBe(false)
+    expect(shouldBlockVoteWhenSingleAllowed(buildPoll({ allow_multiple_votes: true }), true)).toBe(false)
   })
   it('does not block when user has not voted yet', () => {
-    expect(shouldBlockVoteWhenSingleAllowed({ allow_multiple_votes: false }, false)).toBe(false)
+    expect(shouldBlockVoteWhenSingleAllowed(buildPoll({ allow_multiple_votes: false }), false)).toBe(false)
   })
 })
 
 describe('isAnonymousVoteAllowed', () => {
   it('allows anonymous vote when poll config allows', () => {
-    expect(isAnonymousVoteAllowed({ allow_anonymous_votes: true })).toBe(true)
+    expect(isAnonymousVoteAllowed(buildPoll({ allow_anonymous_votes: true }))).toBe(true)
   })
   it('disallows anonymous vote when poll config forbids', () => {
-    expect(isAnonymousVoteAllowed({ allow_anonymous_votes: false })).toBe(false)
+    expect(isAnonymousVoteAllowed(buildPoll({ allow_anonymous_votes: false }))).toBe(false)
   })
 })
