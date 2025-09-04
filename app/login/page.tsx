@@ -33,12 +33,8 @@ export default function LoginPage() {
     try {
       const user = data?.user;
       if (user) {
-        await supabase.from('profiles').upsert({
-          id: user.id,
-          email: user.email ?? email,
-          username: (user.user_metadata as any)?.username ?? null,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'id' });
+        // Initialize profile via server route with validation/sanitization
+        await fetch('/api/profile/init', { method: 'POST' });
       }
     } catch (_) {}
     setLoading(false);

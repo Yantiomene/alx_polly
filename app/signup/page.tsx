@@ -41,10 +41,13 @@ export default function SignUpPage() {
       return;
     }
 
+    // Normalize to lowercase to match server sanitizer
+    const normalizedUsername = trimmedUsername.toLowerCase();
+
     // Enforce DB username format on client to prevent trigger/DB errors
-    const usernameOk = /^[a-zA-Z0-9_]{3,30}$/.test(trimmedUsername);
+    const usernameOk = /^[a-z0-9_]{3,30}$/.test(normalizedUsername);
     if (!usernameOk) {
-      setError('Username must be 3–30 chars and use only letters, numbers, and underscore.');
+      setError('Username must be 3–30 chars and use only lowercase letters, numbers, and underscore.');
       return;
     }
 
@@ -59,7 +62,7 @@ export default function SignUpPage() {
       const { data: existingUser, error: usernameCheckError } = await supabase
         .from('profiles')
         .select('id')
-        .eq('username', trimmedUsername)
+        .eq('username', normalizedUsername)
         .maybeSingle();
 
       if (usernameCheckError) {
@@ -79,7 +82,7 @@ export default function SignUpPage() {
         password,
         options: {
           emailRedirectTo: `${location.origin}/auth/callback`,
-          data: { username: trimmedUsername, email },
+          data: { username: normalizedUsername, email },
         },
       });
 
@@ -90,19 +93,11 @@ export default function SignUpPage() {
         return;
       }
 
-      // If we have a user session immediately (email confirmations disabled), create the profile row now
+      // If we have a user session immediately (email confirmations disabled), initialize profile via server route now
       if (data?.user && data?.session) {
-        await supabase
-          .from('profiles')
-          .upsert(
-            {
-              id: data.user.id,
-              username: trimmedUsername,
-              email: data.user.email ?? email,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'id' }
-          );
+        try {
+          await fetch('/api/profile/init', { method: 'POST' });
+        } catch (_) {}
         router.push('/polls');
         return;
       }
@@ -163,7 +158,7 @@ export default function SignUpPage() {
                 type="text"
                 placeholder="your_username"
                 required
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => setUsername(e.target.value.toLowerCase())}
                 value={username}
               />
             </div>
