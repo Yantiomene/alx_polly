@@ -65,21 +65,23 @@ export default async function EditPollPage({ params }: { params: { id: string } 
   const nowMs = Date.now();
   const start = pollRow.start_date ? new Date(pollRow.start_date) : null;
   const end = pollRow.end_date ? new Date(pollRow.end_date) : null;
+  const startMs = start ? start.getTime() : null;
+  const endMs = end ? end.getTime() : null;
 
   function computeStatus(): { label: string; className: string } {
     let label = "";
     let className = "text-muted-foreground";
 
     if (pollRow.is_active) {
-      if (start && nowMs < start.getTime()) {
-        label = `Starts in ${formatDistance(start.getTime() - nowMs)}`;
+      if (startMs && nowMs < startMs) {
+        label = `Starts in ${formatDistance(startMs - nowMs)}`;
         className = "text-amber-600";
-      } else if (end) {
-        if (nowMs < end.getTime()) {
-          label = `Time remaining: ${formatDistance(end.getTime() - nowMs)}`;
+      } else if (endMs) {
+        if (nowMs < endMs) {
+          label = `Time remaining: ${formatDistance(endMs - nowMs)}`;
           className = "text-emerald-700";
         } else {
-          label = `Ended ${formatDistance(nowMs - end.getTime())} ago`;
+          label = `Ended ${formatDistance(nowMs - endMs)} ago`;
           className = "text-muted-foreground";
         }
       } else {
@@ -87,11 +89,11 @@ export default async function EditPollPage({ params }: { params: { id: string } 
         className = "text-muted-foreground";
       }
     } else {
-      if (start && nowMs < start.getTime()) {
-        label = `Scheduled to start in ${formatDistance(start.getTime() - nowMs)}`;
+      if (startMs && nowMs < startMs) {
+        label = `Scheduled to start in ${formatDistance(startMs - nowMs)}`;
         className = "text-blue-700";
-      } else if (end && nowMs >= end.getTime()) {
-        label = `Ended ${formatDistance(nowMs - end.getTime())} ago`;
+      } else if (endMs && nowMs >= endMs) {
+        label = `Ended ${formatDistance(nowMs - endMs)} ago`;
         className = "text-muted-foreground";
       } else {
         label = "Poll is inactive";
@@ -126,11 +128,11 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     const rawTexts = formData.getAll("options[]").map((v) => String(v || "").trim());
 
     // Build submitted options preserving parallel order; filter empty texts
-    const submitted = rawTexts
+    const submittedOptions = rawTexts
       .map((text, idx) => ({ id: rawIds[idx] || null, text, order_index: idx }))
       .filter((o) => !!o.text);
 
-    if (!title || submitted.length < 2) {
+    if (!title || submittedOptions.length < 2) {
       redirect(`/polls/${pollId}/edit?error=invalid_input`);
     }
 
@@ -155,9 +157,9 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     }
 
     // Diff-based option update
-    const { data: existing, error: loadOptsError } = await supabase
+    const { data: existingOptions, error: loadOptsError } = await supabase
       .from("poll_options")
-      .select("id, text, order_index")
+      .select("id")
       .eq("poll_id", pollId);
 
     if (loadOptsError) {
@@ -166,10 +168,10 @@ export default async function EditPollPage({ params }: { params: { id: string } 
 
     // Removed unused existingById map for clarity
     // const existingById = new Map((existing || []).map((o) => [o.id, o] as const));
-    const submittedIds = new Set(submitted.filter((s) => !!s.id).map((s) => s.id as string));
+    const submittedIds = new Set(submittedOptions.filter((s) => !!s.id).map((s) => s.id as string));
 
     // Deletes: existing options whose id not in submitted
-    const toDelete = (existing || [])
+    const toDelete = (existingOptions || [])
       .filter((o) => !submittedIds.has(o.id))
       .map((o) => o.id);
 
@@ -185,7 +187,7 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     }
 
     // Updates: items with id present
-    for (const s of submitted) {
+    for (const s of submittedOptions) {
       if (s.id) {
         const { error: upErr } = await supabase
           .from("poll_options")
@@ -199,7 +201,7 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     }
 
     // Inserts: items without id
-    const newRows = submitted
+    const newRows = submittedOptions
       .filter((s) => !s.id)
       .map((s) => ({ poll_id: pollId, text: s.text, order_index: s.order_index }));
 
