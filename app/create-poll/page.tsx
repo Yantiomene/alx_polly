@@ -2,6 +2,24 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { createServerComponentClient, createServerActionClient } from "@supabase/auth-helpers-nextjs";
 
+/**
+ * Server action that creates a poll and its options atomically from a form submission.
+ *
+ * Why: Encapsulates creation logic on the server to respect Row Level Security and prevent clients
+ * from crafting arbitrary inserts. Keeps transactional flow (insert poll, insert options, rollback on error).
+ *
+ * Assumptions:
+ * - Auth is required; anonymous users are redirected to /login.
+ * - At least 2 non-empty options are required.
+ *
+ * Edge cases:
+ * - Invalid input redirects back with an error query param.
+ * - On options insert failure, the previously created poll row is deleted to avoid orphaned polls.
+ *
+ * Connections:
+ * - Consumed by the CreatePollForm component via the action prop.
+ * - New poll id is returned to allow client UI to show success then navigate.
+ */
 export async function createPollAction(formData: FormData) {
   "use server";
 
@@ -68,6 +86,21 @@ export async function createPollAction(formData: FormData) {
   return { ok: true, pollId: poll.id } as const;
 }
 
+/**
+ * Server component page that authorizes the user and renders the CreatePollForm.
+ *
+ * Why: Ensures the viewer is authenticated at request time (server-side) before exposing
+ * the create form, aligning with RLS and avoiding client flashes of protected UI.
+ *
+ * Assumptions:
+ * - Supabase auth cookie is present and usable from server components.
+ *
+ * Edge cases:
+ * - Unauthenticated users are redirected to /login from the server (no UI flash).
+ *
+ * Connections:
+ * - Imports and passes the server action createPollAction to the CreatePollForm component.
+ */
 export default async function CreatePollPage() {
   const supabase = createServerComponentClient({ cookies });
 

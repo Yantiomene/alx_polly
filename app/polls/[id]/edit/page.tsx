@@ -5,6 +5,24 @@ import CreatePollForm from "@/components/CreatePollForm";
 
 import type { PollRow, OptionRow } from "@/lib/types";
 
+/**
+ * Load a poll and its options for editing.
+ *
+ * Why: The edit page needs both the poll row and ordered options in one server-side fetch to
+ * render an authoritative snapshot the owner can update. Co-locating the reads reduces extra
+ * round-trips and ensures the server component has complete data before rendering.
+ *
+ * Assumptions:
+ * - Row Level Security restricts visibility, but the caller will still enforce ownership.
+ * - pollId is a valid UUID string.
+ *
+ * Edge cases:
+ * - If the poll is missing or not visible, returns { poll: null, options: [], error } so the caller
+ *   can redirect to a not-found/forbidden state without partially rendering.
+ *
+ * Connections:
+ * - Used by EditPollPage on initial render prior to permission checks and diff-based updates.
+ */
 async function getPollWithOptions(
   supabase: ReturnType<typeof createServerComponentClient>,
   pollId: string
@@ -28,6 +46,24 @@ async function getPollWithOptions(
   return { poll: poll as PollRow, options: (options || []) as OptionRow[], error: optionsError };
 }
 
+/**
+ * Server-rendered edit page for a single poll.
+ *
+ * Why: Owners need a secure place to modify poll metadata and options. This server component
+ * authenticates the user, verifies ownership, and preloads data so the form is consistent with
+ * the database state.
+ *
+ * Assumptions:
+ * - User must be authenticated and must be the poll creator to access this page.
+ * - CreatePollForm will submit changes via the updatePollAction server action.
+ *
+ * Edge cases:
+ * - Missing poll or permission failures redirect to a safe list page with error codes.
+ * - Scheduled/ended status is computed to guide the owner.
+ *
+ * Connections:
+ * - Uses getPollWithOptions for initial data and updatePollAction for mutations.
+ */
 export default async function EditPollPage({ params }: { params: { id: string } }) {
   const supabase = createServerComponentClient({ cookies });
 
@@ -50,6 +86,15 @@ export default async function EditPollPage({ params }: { params: { id: string } 
   }
 
   // Compute remaining/scheduling status message
+  /**
+   * Format a millisecond duration into a compact distance string, e.g. "2d 3h 15m".
+   *
+   * Why: The edit view surfaces schedule context (start/end) to help owners reason about
+   * timing while editing without switching back to details.
+   *
+   * Edge cases:
+   * - Negative durations clamp to 0 for display.
+   */
   function formatDistance(ms: number) {
     const totalSec = Math.max(0, Math.floor(ms / 1000));
     const days = Math.floor(totalSec / 86400);
@@ -68,6 +113,15 @@ export default async function EditPollPage({ params }: { params: { id: string } 
   const startMs = start ? start.getTime() : null;
   const endMs = end ? end.getTime() : null;
 
+  /**
+   * Compute a human-friendly status label and style based on start/end/active flags.
+   *
+   * Why: Owners benefit from immediate feedback about scheduling and whether changes are
+   * currently in effect.
+   *
+   * Edge cases:
+   * - Missing start/end dates fall back to generic labels.
+   */
   function computeStatus(): { label: string; className: string } {
     let label = "";
     let className = "text-muted-foreground";
@@ -106,6 +160,23 @@ export default async function EditPollPage({ params }: { params: { id: string } 
 
   const { label: statusLabel, className: statusClass } = computeStatus();
 
+  /**
+   * Server action to validate and persist edits to the poll and its options.
+   *
+   * Why: Centralizes authorization (creator-only), input normalization, and the diff-based
+   * option reconciliation (insert/update/delete) to keep client code simple and secure.
+   *
+   * Assumptions:
+   * - The caller is the poll creator; RLS and explicit filters ensure only owned rows are mutated.
+   * - FormData contains parallel arrays for option IDs and texts.
+   *
+   * Edge cases:
+   * - Title required and at least two non-empty options enforced; otherwise redirect with error.
+   * - Missing options during delete are tolerated via conditional operations.
+   *
+   * Connections:
+   * - Bound to CreatePollForm as the action prop on this page.
+   */
   async function updatePollAction(formData: FormData) {
     "use server";
 

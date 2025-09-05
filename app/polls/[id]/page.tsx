@@ -18,6 +18,25 @@ import {
   canVote,
 } from "@/lib/vote-rules";
 
+/**
+ * Server-rendered detail page for viewing a single poll, voting, and seeing results.
+ *
+ * Why: Concentrates permission checks, policy rules, and data loading on the server to ensure
+ * correctness under RLS, while providing a simple client UI. Determines whether to show the
+ * voting form or the results based on ownership and prior voting state.
+ *
+ * Assumptions:
+ * - getPollWithOptionsById returns poll, options, and votes respecting RLS.
+ * - Non-public polls are only viewable by the owner.
+ *
+ * Edge cases:
+ * - Missing poll results in a 404 via notFound().
+ * - Vote analytics fall back gracefully when RLS prevents reading votes.
+ *
+ * Connections:
+ * - Uses vote rules helpers (canVote, isAnonymousVoteAllowed, shouldBlockVoteWhenSingleAllowed)
+ *   and polls helpers (hasAlreadyVoted, computeCounts, getVoteCookieKey).
+ */
 export default async function PollDetailPage({
   params,
   searchParams,
@@ -64,6 +83,25 @@ export default async function PollDetailPage({
   const showResults = isOwner || voted || alreadyVoted;
   const showForm = !showResults && canVoteNow;
 
+  /**
+   * Server action to validate and persist a user's vote for the poll.
+   *
+   * Why: Enforces policy (single vote, anonymous rules), integrity (valid option), and security
+   * (creator cannot elevate permissions) at the server boundary. Also sets a cookie for
+   * anonymous voters to prevent duplicate votes.
+   *
+   * Assumptions:
+   * - FormData contains poll_id and option_id fields.
+   * - Row Level Security protects writes to the votes table appropriately.
+   *
+   * Edge cases:
+   * - Invalid form data, inactive polls, invalid options, or duplicate votes redirect to
+   *   contextual error states.
+   * - Insert failures propagate with an error code for troubleshooting.
+   *
+   * Connections:
+   * - Uses vote-rules helpers, hasAlreadyVoted, and getVoteCookieKey to coordinate state.
+   */
   async function submitVoteAction(formData: FormData) {
     "use server";
 
@@ -248,26 +286,21 @@ export default async function PollDetailPage({
                     </label>
                   ))}
                 </fieldset>
-                <Button type="submit" disabled={!pollRow.is_active || options.length === 0}>
-                  Submit Vote
-                </Button>
               </form>
-
-              {/* Creator can see results without voting */}
-              {isOwner && <div className="pt-4">{resultsSection}</div>}
             </div>
           ) : (
-            <div className="pt-2 space-y-4">
-              {voted && <div className="mb-3 text-emerald-700">Thank you for voting!</div>}
-              {!voted && alreadyVoted && (
-                <div className="mb-3 text-blue-700">You have already voted on this poll.</div>
-              )}
-              {resultsSection}
-              <div className="flex items-center gap-2">
-                <Link href="/polls">
-                  <Button variant="secondary">Back to Polls</Button>
-                </Link>
-              </div>
+            resultsSection
+          )}
+
+          {showResults && !showForm && (
+            <div className="pt-2">{resultsSection}</div>
+          )}
+
+          {isOwner && (
+            <div>
+              <Link href={`/polls/${pollRow.id}/edit`}>
+                <Button variant="secondary">Edit Poll</Button>
+              </Link>
             </div>
           )}
         </CardContent>

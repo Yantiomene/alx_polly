@@ -17,6 +17,14 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+/**
+ * SignUpPage
+ * Purpose: Renders the sign-up form and coordinates client-side validations and Supabase sign-up flow.
+ * Why needed in this app: Creates new users and primes their profile data so they can immediately create and participate in polls.
+ * Assumptions: Supabase email/password sign-up is enabled; server route /api/profile/init exists and is idempotent; usernames must be unique in the profiles table and follow lowercase/underscore conventions.
+ * Edge cases: Duplicate usernames or emails, password mismatch, network/DB errors, and verification flows where sessions are not immediately available.
+ * Connections: Uses createClientComponentClient for Supabase, calls /api/profile/init after immediate session sign-up, and redirects to /polls; relies on shared DB schema (profiles) and the callback route for email verification.
+ */
 export default function SignUpPage() {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -29,6 +37,14 @@ export default function SignUpPage() {
   const router = useRouter();
   const supabase = createClientComponentClient();
 
+  /**
+   * handleSignUp
+   * Purpose: Validates input, enforces username format, ensures uniqueness, and invokes Supabase signUp; then either initializes profile (if session present) or guides the user through email verification.
+   * Assumptions: Username is normalized to lowercase to match server-side sanitization; Supabase may or may not return a session depending on email confirmation settings.
+   * Edge cases: Username regex failures, username already taken, duplicate email, resend verification failure, and generic exceptions; shows user-friendly messages accordingly.
+   * Connections: Bound to form submission and the footer button; interacts with the profiles table for uniqueness check, Supabase auth for account creation, and /api/profile/init for profile bootstrap when session exists.
+   * @param e Optional React.FormEvent to prevent default submit behavior when triggered via form.
+   */
   const handleSignUp = async (e?: React.FormEvent) => {
     e?.preventDefault();
     setError(null);
