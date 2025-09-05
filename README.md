@@ -1,43 +1,88 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ALX Polly
+
+A simple, secure polling application built with Next.js and Supabase. Create polls, share them with others, and collect votes in real-time with guardrails around anonymous voting and single/multiple vote rules.
 
 ## Preview
 
 ![Landing page screenshot](./images/Image%2029-08-2025%20%C3%A0%2022.29.jpg)
 
-## Getting Started
+## Tech Stack
+- Next.js (App Router)
+- React + TypeScript
+- Tailwind CSS
+- Supabase (Auth, Postgres, RLS)
+- Vitest (unit + integration tests)
 
-First, run the development server:
+## Requirements
+- Node.js 20+ (recommended; avoids deprecation warnings)
+- An active Supabase project
+
+## Setup
+
+1) Install dependencies
+
+```bash
+npm install
+```
+
+2) Create a Supabase project
+- In the Supabase Dashboard, create a new project.
+- Enable your preferred auth provider(s) (Email/OTP is fine for local dev).
+- Copy your Project URL and anon public API key from: Project Settings → API.
+
+3) Configure environment variables
+Create a file named `.env.local` in the project root with:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=your-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-public-key
+```
+
+4) Database and RLS
+- Set up tables for `profiles`, `polls`, `poll_options`, and `votes`.
+- Enable Row Level Security (RLS) and apply policies so that users can only modify their own data, and public read access is restricted as desired.
+- See the "Database/RLS Checklist" in the Security section below for guidance.
+
+## Running Locally
+
+Start the dev server and open the app:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# open http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Testing
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Run the test suite:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm test
+```
 
-## Learn More
+You should see all unit/integration tests passing.
 
-To learn more about Next.js, take a look at the following resources:
+## Usage Examples
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Sign up / Sign in
+  - Go to `/signup` to create an account, or `/login` to sign in.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Create a poll
+  - Navigate to `/create-poll`.
+  - Enter a question and add one or more options.
+  - Configure whether multiple selections and/or anonymous voting are allowed.
+  - Submit to create your poll and copy the shareable link.
 
-## Deploy on Vercel
+- Vote on a poll
+  - Open the shared link (e.g., `/polls/<poll-id>`).
+  - Select your choice(s) and submit your vote.
+  - Depending on the poll settings, anonymous votes may be allowed or blocked, and a cookie/session may prevent multiple votes.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Troubleshooting
+- If you see a deprecation warning about Node 18 from `@supabase/supabase-js`, upgrade to Node 20+.
+- In development, you may see benign warnings such as cookie parse messages; these don’t affect functionality.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
 
 ## Security Audit and Hardening Guide
 
