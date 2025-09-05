@@ -6,6 +6,15 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 
+/**
+ * Animated torus mesh shown on the landing page.
+ *
+ * Why: Adds a playful visual element to reinforce the "live" nature of polls without
+ * introducing heavy assets. Demonstrates useFrame for small, GPU-accelerated motion.
+ *
+ * Edge cases: None; component is purely presentational and isolated.
+ * Connections: Rendered inside <Canvas> on the home page. (May be swapped out.)
+ */
 function SpinningTorus() {
   const meshRef = useRef<THREE.Mesh>(null!);
 
@@ -25,6 +34,16 @@ function SpinningTorus() {
   );
 }
 
+/**
+ * Group of animated bar meshes conveying dynamic poll results.
+ *
+ * Why: Home page visual cue for poll activity. Simple sinusoidal animation simulates
+ * fluctuating vote counts without querying data.
+ *
+ * Assumptions: Rendered within a Three.js Canvas context.
+ * Edge cases: Bars array is static; animation stable for long runtimes.
+ * Connections: Siblings with SpinningTorus, rendered on landing page Canvas.
+ */
 function PollBars() {
   const groupRef = useRef<THREE.Group>(null!);
   const bars = useMemo(
@@ -62,6 +81,14 @@ function PollBars() {
   );
 }
 
+/**
+ * Marketing home page with CTA buttons and a lightweight 3D canvas backdrop.
+ *
+ * Why: Provides a welcoming entry point and quick navigation to core app flows (create/browse polls).
+ * Keeps UI simple and fast-loading.
+ *
+ * Connections: Links to /create-poll and /polls pages; visual components PollBars/SpinningTorus.
+ */
 export default function Home() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-16">

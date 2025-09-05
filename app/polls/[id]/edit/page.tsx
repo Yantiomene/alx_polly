@@ -3,26 +3,26 @@ import { redirect } from "next/navigation";
 import { createServerComponentClient, createServerActionClient } from "@supabase/auth-helpers-nextjs";
 import CreatePollForm from "@/components/CreatePollForm";
 
-// Explicit row types to help TS inference
-type PollRow = {
-  id: string;
-  title: string;
-  description: string | null;
-  start_date: string | null;
-  end_date: string | null;
-  allow_multiple_votes: boolean;
-  allow_anonymous_votes: boolean;
-  is_public: boolean;
-  is_active: boolean;
-  creator_id: string;
-};
+import type { PollRow, OptionRow } from "@/lib/types";
 
-type OptionRow = {
-  id: string;
-  text: string;
-  order_index: number;
-};
-
+/**
+ * Load a poll and its options for editing.
+ *
+ * Why: The edit page needs both the poll row and ordered options in one server-side fetch to
+ * render an authoritative snapshot the owner can update. Co-locating the reads reduces extra
+ * round-trips and ensures the server component has complete data before rendering.
+ *
+ * Assumptions:
+ * - Row Level Security restricts visibility, but the caller will still enforce ownership.
+ * - pollId is a valid UUID string.
+ *
+ * Edge cases:
+ * - If the poll is missing or not visible, returns { poll: null, options: [], error } so the caller
+ *   can redirect to a not-found/forbidden state without partially rendering.
+ *
+ * Connections:
+ * - Used by EditPollPage on initial render prior to permission checks and diff-based updates.
+ */
 async function getPollWithOptions(
   supabase: ReturnType<typeof createServerComponentClient>,
   pollId: string
@@ -46,6 +46,24 @@ async function getPollWithOptions(
   return { poll: poll as PollRow, options: (options || []) as OptionRow[], error: optionsError };
 }
 
+/**
+ * Server-rendered edit page for a single poll.
+ *
+ * Why: Owners need a secure place to modify poll metadata and options. This server component
+ * authenticates the user, verifies ownership, and preloads data so the form is consistent with
+ * the database state.
+ *
+ * Assumptions:
+ * - User must be authenticated and must be the poll creator to access this page.
+ * - CreatePollForm will submit changes via the updatePollAction server action.
+ *
+ * Edge cases:
+ * - Missing poll or permission failures redirect to a safe list page with error codes.
+ * - Scheduled/ended status is computed to guide the owner.
+ *
+ * Connections:
+ * - Uses getPollWithOptions for initial data and updatePollAction for mutations.
+ */
 export default async function EditPollPage({ params }: { params: { id: string } }) {
   const supabase = createServerComponentClient({ cookies });
 
@@ -68,6 +86,15 @@ export default async function EditPollPage({ params }: { params: { id: string } 
   }
 
   // Compute remaining/scheduling status message
+  /**
+   * Format a millisecond duration into a compact distance string, e.g. "2d 3h 15m".
+   *
+   * Why: The edit view surfaces schedule context (start/end) to help owners reason about
+   * timing while editing without switching back to details.
+   *
+   * Edge cases:
+   * - Negative durations clamp to 0 for display.
+   */
   function formatDistance(ms: number) {
     const totalSec = Math.max(0, Math.floor(ms / 1000));
     const days = Math.floor(totalSec / 86400);
@@ -80,42 +107,76 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     return parts.join(" ");
   }
 
-  const now = new Date();
+  const nowMs = Date.now();
   const start = pollRow.start_date ? new Date(pollRow.start_date) : null;
   const end = pollRow.end_date ? new Date(pollRow.end_date) : null;
+  const startMs = start ? start.getTime() : null;
+  const endMs = end ? end.getTime() : null;
 
-  let statusLabel = "";
-  let statusClass = "text-muted-foreground";
+  /**
+   * Compute a human-friendly status label and style based on start/end/active flags.
+   *
+   * Why: Owners benefit from immediate feedback about scheduling and whether changes are
+   * currently in effect.
+   *
+   * Edge cases:
+   * - Missing start/end dates fall back to generic labels.
+   */
+  function computeStatus(): { label: string; className: string } {
+    let label = "";
+    let className = "text-muted-foreground";
 
-  if (pollRow.is_active) {
-    if (start && now < start) {
-      statusLabel = `Starts in ${formatDistance(start.getTime() - now.getTime())}`;
-      statusClass = "text-amber-600";
-    } else if (end) {
-      if (now < end) {
-        statusLabel = `Time remaining: ${formatDistance(end.getTime() - now.getTime())}`;
-        statusClass = "text-emerald-700";
+    if (pollRow.is_active) {
+      if (startMs && nowMs < startMs) {
+        label = `Starts in ${formatDistance(startMs - nowMs)}`;
+        className = "text-amber-600";
+      } else if (endMs) {
+        if (nowMs < endMs) {
+          label = `Time remaining: ${formatDistance(endMs - nowMs)}`;
+          className = "text-emerald-700";
+        } else {
+          label = `Ended ${formatDistance(nowMs - endMs)} ago`;
+          className = "text-muted-foreground";
+        }
       } else {
-        statusLabel = `Ended ${formatDistance(now.getTime() - end.getTime())} ago`;
-        statusClass = "text-muted-foreground";
+        label = "No end date set";
+        className = "text-muted-foreground";
       }
     } else {
-      statusLabel = "No end date set";
-      statusClass = "text-muted-foreground";
+      if (startMs && nowMs < startMs) {
+        label = `Scheduled to start in ${formatDistance(startMs - nowMs)}`;
+        className = "text-blue-700";
+      } else if (endMs && nowMs >= endMs) {
+        label = `Ended ${formatDistance(nowMs - endMs)} ago`;
+        className = "text-muted-foreground";
+      } else {
+        label = "Poll is inactive";
+        className = "text-muted-foreground";
+      }
     }
-  } else {
-    if (start && now < start) {
-      statusLabel = `Scheduled to start in ${formatDistance(start.getTime() - now.getTime())}`;
-      statusClass = "text-blue-700";
-    } else if (end && now >= end) {
-      statusLabel = `Ended ${formatDistance(now.getTime() - end.getTime())} ago`;
-      statusClass = "text-muted-foreground";
-    } else {
-      statusLabel = "Poll is inactive";
-      statusClass = "text-muted-foreground";
-    }
+
+    return { label, className };
   }
 
+  const { label: statusLabel, className: statusClass } = computeStatus();
+
+  /**
+   * Server action to validate and persist edits to the poll and its options.
+   *
+   * Why: Centralizes authorization (creator-only), input normalization, and the diff-based
+   * option reconciliation (insert/update/delete) to keep client code simple and secure.
+   *
+   * Assumptions:
+   * - The caller is the poll creator; RLS and explicit filters ensure only owned rows are mutated.
+   * - FormData contains parallel arrays for option IDs and texts.
+   *
+   * Edge cases:
+   * - Title required and at least two non-empty options enforced; otherwise redirect with error.
+   * - Missing options during delete are tolerated via conditional operations.
+   *
+   * Connections:
+   * - Bound to CreatePollForm as the action prop on this page.
+   */
   async function updatePollAction(formData: FormData) {
     "use server";
 
@@ -138,11 +199,11 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     const rawTexts = formData.getAll("options[]").map((v) => String(v || "").trim());
 
     // Build submitted options preserving parallel order; filter empty texts
-    const submitted = rawTexts
+    const submittedOptions = rawTexts
       .map((text, idx) => ({ id: rawIds[idx] || null, text, order_index: idx }))
       .filter((o) => !!o.text);
 
-    if (!title || submitted.length < 2) {
+    if (!title || submittedOptions.length < 2) {
       redirect(`/polls/${pollId}/edit?error=invalid_input`);
     }
 
@@ -167,20 +228,21 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     }
 
     // Diff-based option update
-    const { data: existing, error: loadOptsError } = await supabase
+    const { data: existingOptions, error: loadOptsError } = await supabase
       .from("poll_options")
-      .select("id, text, order_index")
+      .select("id")
       .eq("poll_id", pollId);
 
     if (loadOptsError) {
       redirect(`/polls/${pollId}/edit?error=update_options_failed`);
     }
 
-    const existingById = new Map((existing || []).map((o) => [o.id, o] as const));
-    const submittedIds = new Set(submitted.filter((s) => !!s.id).map((s) => s.id as string));
+    // Removed unused existingById map for clarity
+    // const existingById = new Map((existing || []).map((o) => [o.id, o] as const));
+    const submittedIds = new Set(submittedOptions.filter((s) => !!s.id).map((s) => s.id as string));
 
     // Deletes: existing options whose id not in submitted
-    const toDelete = (existing || [])
+    const toDelete = (existingOptions || [])
       .filter((o) => !submittedIds.has(o.id))
       .map((o) => o.id);
 
@@ -196,7 +258,7 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     }
 
     // Updates: items with id present
-    for (const s of submitted) {
+    for (const s of submittedOptions) {
       if (s.id) {
         const { error: upErr } = await supabase
           .from("poll_options")
@@ -210,7 +272,7 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     }
 
     // Inserts: items without id
-    const newRows = submitted
+    const newRows = submittedOptions
       .filter((s) => !s.id)
       .map((s) => ({ poll_id: pollId, text: s.text, order_index: s.order_index }));
 

@@ -8,14 +8,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
+/**
+ * Combined auth page providing basic email/password sign-in and sign-up forms.
+ *
+ * Why: A lightweight fallback/alternative to the dedicated /login and /signup flows.
+ * This component intentionally does not perform profile initialization; that is handled
+ * by /auth/callback and /login to centralize profile provisioning via /api/profile/init.
+ *
+ * Connections:
+ * - Redirect target for email link: /auth/callback, which calls /api/profile/init.
+ * - Uses Supabase client to trigger auth flows; no direct DB writes here.
+ */
 export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const searchParams = useSearchParams();
-  const initialView = searchParams.get('view') === 'sign-up' ? 'sign-up' : 'sign-in';
+  const useSearch = useSearchParams();
+  const initialView = useSearch.get('view') === 'sign-up' ? 'sign-up' : 'sign-in';
   const [view, setView] = useState<'sign-in' | 'sign-up'>(initialView);
   const supabase = createClientComponentClient();
 
+  /**
+   * Submit handler for sign-up using email/password.
+   *
+   * Assumptions:
+   * - Supabase will send a verification email that redirects to /auth/callback.
+   * - Profile initialization occurs on callback, not here.
+   */
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     await supabase.auth.signUp({
@@ -27,6 +45,13 @@ export default function AuthPage() {
     });
   };
 
+  /**
+   * Submit handler for sign-in using email/password.
+   *
+   * Assumptions:
+   * - On success, session exists and subsequent navigation triggers profile init on pages
+   *   that call /api/profile/init (e.g., /login flow). This page itself does not call it.
+   */
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     await supabase.auth.signInWithPassword({

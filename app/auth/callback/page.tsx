@@ -4,6 +4,23 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+/**
+ * Auth callback page that finalizes sign-in and triggers profile initialization.
+ *
+ * Why: Ensures every successful auth flow is funneled through a server-controlled
+ * profile provisioning step (/api/profile/init) before routing to the app.
+ *
+ * Assumptions:
+ * - Supabase handles the auth exchange and exposes the session via getSession().
+ *
+ * Edge cases:
+ * - If session is missing, user is redirected back to /login.
+ * - Failures in profile init are non-fatal; the user can still proceed.
+ *
+ * Connections:
+ * - /api/profile/init centralizes profile upsert with RLS protections.
+ * - Complements the dedicated /login and /signup flows.
+ */
 export default function CallbackPage() {
   const supabase = createClientComponentClient();
   const router = useRouter();
@@ -12,17 +29,11 @@ export default function CallbackPage() {
     const handleAuthCallback = async () => {
       const { data } = await supabase.auth.getSession();
       if (data?.session) {
-        // Ensure profile exists after email confirmation
-        const user = data.session.user;
+        // Initialize profile via server route with validation/sanitization
         try {
-          await supabase.from('profiles').upsert({
-            id: user.id,
-            username: (user.user_metadata as any)?.username ?? null,
-            email: user.email ?? null,
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'id' });
+          await fetch("/api/profile/init", { method: "POST" });
         } catch (_) {
-          // ignore upsert errors in callback; user will proceed anyway
+          // ignore profile init errors; user proceeds anyway
         }
         router.replace('/polls');
       } else {

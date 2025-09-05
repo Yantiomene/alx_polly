@@ -19,6 +19,20 @@ type Poll = {
   end_date: string | null; // added
 };
 
+/**
+ * Format a remaining time window into a compact string (e.g., "2d 3h 10m 05s").
+ *
+ * Why: Avoids re-implementing this presentation logic across pages (listing vs details).
+ *
+ * Assumptions:
+ * - endDateISO is a valid ISO timestamp; now is a Date representing current time.
+ *
+ * Edge cases:
+ * - If endDate <= now, returns 'Ended'.
+ *
+ * Connections:
+ * - Used by PollsPage to show countdown for active polls with an end_date.
+ */
 function formatRemaining(endDateISO: string, now: Date): string {
   const endMs = new Date(endDateISO).getTime();
   let diff = Math.max(0, endMs - now.getTime());
@@ -39,6 +53,23 @@ function formatRemaining(endDateISO: string, now: Date): string {
   return parts.join(' ');
 }
 
+/**
+ * Polls listing page that loads public polls and the user's own polls, with live countdowns.
+ *
+ * Why: Central workspace where users discover and manage polls. Performs client-side reads
+ * permitted by RLS; sensitive writes remain on server actions.
+ *
+ * Assumptions:
+ * - A valid session is required; unauthenticated visitors are redirected to /login.
+ * - Supabase client is available and RLS restricts results to permitted rows.
+ *
+ * Edge cases:
+ * - Auto-deactivates expired polls owned by the current user to keep UI accurate.
+ * - Handles transient read failures with a friendly message.
+ *
+ * Connections:
+ * - Links to /polls/[id] for details and voting, and /polls/[id]/edit for owners.
+ */
 export default function PollsPage() {
   const { session, isLoading } = useAuth();
   const router = useRouter();
@@ -116,6 +147,15 @@ export default function PollsPage() {
     })();
   }, [session, loadingPolls, polls, supabase]);
 
+  /**
+   * Delete handler for a poll and its options (owned by the current user).
+   *
+   * Why: Keeps client responsibility limited to composing allowed mutations; RLS ensures
+   * the delete only affects rows owned by the user.
+   *
+   * Edge cases:
+   * - Options delete may fail if none exist; we log and proceed to delete the poll.
+   */
   async function handleDelete(poll: Poll) {
     if (!session) return;
     const confirmed = window.confirm('Are you sure you want to delete this poll? This action cannot be undone.');

@@ -9,6 +9,14 @@ import { Label } from "@/components/ui/label";
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 
+/**
+ * LoginPage
+ * Purpose: Renders the login form and orchestrates the client-side authentication flow using Supabase.
+ * Why needed in this app: Provides the entry point for existing users to access polls; on successful sign-in it triggers profile initialization so routes like /polls that depend on a user profile have consistent metadata.
+ * Assumptions: Email/password authentication is enabled in Supabase; the /api/profile/init route exists and is idempotent; navigation to /polls is the post-login hub.
+ * Edge cases: Invalid credentials, network failures, and profile initialization errors; the latter are intentionally swallowed to avoid blocking login UX.
+ * Connections: Uses createClientComponentClient for Supabase, calls /api/profile/init on success, and navigates with next/navigation's router to /polls. UI is composed with Card, Input, Label, and Button components.
+ */
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,6 +25,14 @@ export default function LoginPage() {
   const supabase = createClientComponentClient();
   const router = useRouter();
 
+  /**
+   * handleSignIn
+   * Purpose: Handles form submission for login; signs in via Supabase, then fires server-side profile initialization and routes to /polls.
+   * Assumptions: Email and password state values are bound to inputs; Supabase returns either a user or an error; profile init can safely be called multiple times.
+   * Edge cases: Wrong password or unknown errors set a user-facing error message; fetch to /api/profile/init may fail and is intentionally ignored to avoid blocking navigation.
+   * Connections: Bound to the form onSubmit and to the footer button onClick; integrates Supabase auth and the app's profile bootstrap API, then uses useRouter for navigation.
+   * @param e React.FormEvent submission event to prevent default browser submit behavior.
+   */
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -33,12 +49,8 @@ export default function LoginPage() {
     try {
       const user = data?.user;
       if (user) {
-        await supabase.from('profiles').upsert({
-          id: user.id,
-          email: user.email ?? email,
-          username: (user.user_metadata as any)?.username ?? null,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'id' });
+        // Initialize profile via server route with validation/sanitization
+        await fetch('/api/profile/init', { method: 'POST' });
       }
     } catch (_) {}
     setLoading(false);
