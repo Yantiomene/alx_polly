@@ -292,10 +292,6 @@ export default async function PollDetailPage({
             resultsSection
           )}
 
-          {showResults && !showForm && (
-            <div className="pt-2">{resultsSection}</div>
-          )}
-
           {isOwner && (
             <div>
               <Link href={`/polls/${pollRow.id}/edit`}>
