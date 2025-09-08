@@ -34,7 +34,7 @@ type Props = {
   initial?: InitialValues;
 };
 
-export default function CreatePollForm({ action, titleText, submitLabel, successMessage, initial }: Props) {
+export default function CreatePollForm({ onSubmit, titleText, submitLabel, successMessage, initial }: Props) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const error = searchParams.get("error");
@@ -101,16 +101,12 @@ export default function CreatePollForm({ action, titleText, submitLabel, success
           </div>
         )}
         <form
-          action={async (formData) => {
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.currentTarget);
             try {
               setSubmitting(true);
-              const result = await action(formData);
-              if (result && (result as any).ok) {
-                setSuccess(true);
-                setTimeout(() => router.push("/polls"), 1200);
-              } else {
-                router.push("/polls");
-              }
+              await onSubmit(formData);
             } finally {
               setSubmitting(false);
             }

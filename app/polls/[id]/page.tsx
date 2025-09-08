@@ -1,172 +1,121 @@
-import { cookies } from "next/headers";
-import { notFound, redirect } from "next/navigation";
-import { createServerComponentClient, createServerActionClient } from "@supabase/auth-helpers-nextjs";
+'use client'
+import { notFound, useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { randomUUID } from "crypto";
 import type { PollRow, OptionRow, VoteRow } from "@/lib/types";
 import {
-  getPollWithOptionsById,
-  hasAlreadyVoted,
   computeCounts,
   getVoteCookieKey,
 } from "@/lib/polls";
 import {
-  shouldBlockVoteWhenSingleAllowed,
-  isAnonymousVoteAllowed,
   canVote,
 } from "@/lib/vote-rules";
 
-/**
- * Server-rendered detail page for viewing a single poll, voting, and seeing results.
- *
- * Why: Concentrates permission checks, policy rules, and data loading on the server to ensure
- * correctness under RLS, while providing a simple client UI. Determines whether to show the
- * voting form or the results based on ownership and prior voting state.
- *
- * Assumptions:
- * - getPollWithOptionsById returns poll, options, and votes respecting RLS.
- * - Non-public polls are only viewable by the owner.
- *
- * Edge cases:
- * - Missing poll results in a 404 via notFound().
- * - Vote analytics fall back gracefully when RLS prevents reading votes.
- *
- * Connections:
- * - Uses vote rules helpers (canVote, isAnonymousVoteAllowed, shouldBlockVoteWhenSingleAllowed)
- *   and polls helpers (hasAlreadyVoted, computeCounts, getVoteCookieKey).
- */
-export default async function PollDetailPage({
-  params,
-  searchParams,
-}: {
-  params: { id: string };
-  searchParams: { [key: string]: string | string[] | undefined };
-}) {
-  const supabase = createServerComponentClient({ cookies });
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export default function PollDetailPage({ params }: { params: { id: string } }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [poll, setPoll] = useState<PollRow | null>(null);
+  const [options, setOptions] = useState<OptionRow[]>([]);
+  const [votes, setVotes] = useState<VoteRow[]>([]);
+  const [votesError, setVotesError] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  const [alreadyVoted, setAlreadyVoted] = useState(false);
 
-  const pollId = params.id;
-  const { poll, options, votes, votesError } = await getPollWithOptionsById(supabase as any, pollId);
+  const voted = searchParams.get("voted") === "1";
+  const voteError = searchParams.get("vote_error");
+  const voteErrorCode = searchParams.get("code");
+
+  useEffect(() => {
+    const supabase = createClientComponentClient();
+    const fetchPoll = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUser(user);
+
+      const { data: pollData, error: pollError } = await supabase
+        .from("polls")
+        .select(
+          "id, title, description, start_date, end_date, allow_multiple_votes, allow_anonymous_votes, is_public, is_active, creator_id"
+        )
+        .eq("id", params.id)
+        .single();
+
+      if (pollError || !pollData) {
+        notFound();
+        return;
+      }
+
+      const { data: optionsData, error: optionsError } = await supabase
+        .from("poll_options")
+        .select("id, text, order_index, vote_count")
+        .eq("poll_id", params.id)
+        .order("order_index", { ascending: true });
+
+      const { data: votesData, error: vErr } = await supabase
+        .from("votes")
+        .select("option_id")
+        .eq("poll_id", params.id);
+
+      setPoll(pollData as PollRow);
+      setOptions((optionsData || []) as OptionRow[]);
+      setVotes((votesData || []) as VoteRow[]);
+      setVotesError(Boolean(vErr));
+
+      if (user) {
+        const { data: existing } = await supabase
+          .from("votes")
+          .select("id")
+          .eq("poll_id", pollData.id)
+          .eq("voter_id", user.id)
+          .limit(1);
+        setAlreadyVoted(Boolean(existing && existing.length > 0));
+      } else {
+        const cookieStore = document.cookie;
+        setAlreadyVoted(cookieStore.includes(getVoteCookieKey(pollData.id)));
+      }
+
+      setLoading(false);
+    };
+
+    fetchPoll();
+  }, [params.id, notFound]);
+
+  const submitVoteAction = async (formData: FormData) => {
+    const optionId = formData.get("option_id");
+    const pollId = formData.get("poll_id");
+
+    const response = await fetch("/api/votes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ poll_id: pollId, option_id: optionId }),
+    });
+
+    if (response.ok) {
+      router.push(`/polls/${params.id}?voted=1`);
+    } else {
+      const { error } = await response.json();
+      router.push(`/polls/${params.id}?vote_error=${error}`);
+    }
+  };
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
 
   if (!poll) {
-    notFound();
+    return <div>Poll not found.</div>;
   }
 
-  const pollRow: PollRow = poll as PollRow;
-  const isOwner = pollRow.creator_id === user?.id;
-
-  if (!pollRow.is_public && !isOwner) {
-    notFound();
-  }
-
-  // Determine if the current viewer has already voted
-  const cookieStore = await cookies();
-  const alreadyVoted = await hasAlreadyVoted(
-    supabase as any,
-    pollRow.id,
-    user?.id ?? null,
-    cookieStore as any
-  );
-
-  const voted = searchParams?.voted === "1";
-  const voteError = typeof searchParams?.vote_error === "string" ? (searchParams?.vote_error as string) : undefined;
-  const voteErrorCode = typeof searchParams?.code === "string" ? (searchParams?.code as string) : undefined;
-
-  // Compute analytics counts once
+  const isOwner = poll.creator_id === user?.id;
   const { countsMap, totalVotes } = computeCounts(options as OptionRow[], votes as VoteRow[], !!votesError);
-
-  const canVoteNow = canVote(pollRow, options.length, alreadyVoted);
+  const canVoteNow = canVote(poll, options.length, alreadyVoted);
   const showResults = isOwner || voted || alreadyVoted;
   const showForm = !showResults && canVoteNow;
-
-  /**
-   * Server action to validate and persist a user's vote for the poll.
-   *
-   * Why: Enforces policy (single vote, anonymous rules), integrity (valid option), and security
-   * (creator cannot elevate permissions) at the server boundary. Also sets a cookie for
-   * anonymous voters to prevent duplicate votes.
-   *
-   * Assumptions:
-   * - FormData contains poll_id and option_id fields.
-   * - Row Level Security protects writes to the votes table appropriately.
-   *
-   * Edge cases:
-   * - Invalid form data, inactive polls, invalid options, or duplicate votes redirect to
-   *   contextual error states.
-   * - Insert failures propagate with an error code for troubleshooting.
-   *
-   * Connections:
-   * - Uses vote-rules helpers, hasAlreadyVoted, and getVoteCookieKey to coordinate state.
-   */
-  async function submitVoteAction(formData: FormData) {
-    "use server";
-
-    const supabase = createServerActionClient({ cookies });
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    const formPollId = String(formData.get("poll_id") || "");
-    const optionId = String(formData.get("option_id") || "");
-
-    if (!formPollId || !optionId || formPollId !== pollRow.id) {
-      redirect(`/polls/${params.id}?vote_error=invalid`);
-    }
-
-    if (!pollRow.is_active) {
-      redirect(`/polls/${params.id}?vote_error=inactive`);
-    }
-
-    if (!isAnonymousVoteAllowed(pollRow) && !user) {
-      redirect(`/login?next=/polls/${params.id}`);
-    }
-
-    const validOption = (options || []).some((o) => o.id === optionId);
-    if (!validOption) {
-      redirect(`/polls/${params.id}?vote_error=invalid`);
-    }
-
-    // Prevent duplicate vote when multiple votes are not allowed
-    if (!pollRow.allow_multiple_votes) {
-      const cookieStore = await cookies();
-      const alreadyVotedNow = await hasAlreadyVoted(
-        supabase as any,
-        pollRow.id,
-        user?.id ?? null,
-        cookieStore as any
-      );
-      if (shouldBlockVoteWhenSingleAllowed(pollRow, alreadyVotedNow)) {
-        redirect(`/polls/${params.id}?voted=1&dup=1`);
-      }
-    }
-
-    const { error: insErr } = await supabase.from("votes").insert({
-      poll_id: pollRow.id,
-      option_id: optionId,
-      voter_id: user?.id ?? null,
-      vote_hash: randomUUID(),
-      is_valid: true,
-      // Do NOT set is_anonymous because the column is GENERATED ALWAYS in your schema
-    } as any);
-
-    if (insErr) {
-      console.error("votes insert failed", insErr);
-      const code = (insErr as any).code || "unknown";
-      redirect(`/polls/${params.id}?vote_error=save_failed&code=${encodeURIComponent(String(code))}`);
-    }
-
-    // Mark anonymous users as having voted using a cookie
-    if (!user?.id) {
-      const cookieStore = await cookies();
-      cookieStore.set(getVoteCookieKey(pollRow.id), "1", { path: "/", maxAge: 60 * 60 * 24 * 365 });
-    }
-
-    redirect(`/polls/${params.id}?voted=1`);
-  }
 
   const resultsSection = (
     <div>
@@ -213,8 +162,8 @@ export default async function PollDetailPage({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            {pollRow.title}
-            {pollRow.is_active && (
+            {poll.title}
+            {poll.is_active && (
               <span
                 className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500"
                 title="Active"
@@ -222,28 +171,28 @@ export default async function PollDetailPage({
               />
             )}
           </CardTitle>
-          {pollRow.description && <CardDescription>{pollRow.description}</CardDescription>}
+          {poll.description && <CardDescription>{poll.description}</CardDescription>}
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="text-sm text-muted-foreground flex flex-wrap gap-4">
             <span>
-              Visibility: {pollRow.is_public ? (
+              Visibility: {poll.is_public ? (
                 <span className="text-emerald-600">Public</span>
               ) : (
                 <span className="text-amber-600">Private</span>
               )}
             </span>
             <span>
-              Status: {pollRow.is_active ? (
+              Status: {poll.is_active ? (
                 <span className="text-emerald-600">Active</span>
               ) : (
                 <span className="text-muted-foreground">Inactive</span>
               )}
             </span>
-            {pollRow.start_date && <span>Starts: {new Date(pollRow.start_date).toLocaleString()}</span>}
-            {pollRow.end_date && <span>Ends: {new Date(pollRow.end_date).toLocaleString()}</span>}
-            <span>Multiple votes: {pollRow.allow_multiple_votes ? "Allowed" : "Not allowed"}</span>
-            <span>Anonymous votes: {pollRow.allow_anonymous_votes ? "Allowed" : "Not allowed"}</span>
+            {poll.start_date && <span>Starts: {new Date(poll.start_date).toLocaleString()}</span>}
+            {poll.end_date && <span>Ends: {new Date(poll.end_date).toLocaleString()}</span>}
+            <span>Multiple votes: {poll.allow_multiple_votes ? "Allowed" : "Not allowed"}</span>
+            <span>Anonymous votes: {poll.allow_anonymous_votes ? "Allowed" : "Not allowed"}</span>
           </div>
 
           <div>
@@ -276,9 +225,13 @@ export default async function PollDetailPage({
                   {!["invalid", "inactive", "save_failed"].includes(voteError) && "Unable to submit vote. Please try again."}
                 </div>
               )}
-              <form action={submitVoteAction} className="space-y-3">
-                <input type="hidden" name="poll_id" value={pollRow.id} />
-                <fieldset disabled={!pollRow.is_active || options.length === 0} className="space-y-2">
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                submitVoteAction(formData);
+              }} className="space-y-3">
+                <input type="hidden" name="poll_id" value={poll.id} />
+                <fieldset disabled={!poll.is_active || options.length === 0} className="space-y-2">
                   {options.map((opt: OptionRow) => (
                     <label key={opt.id} className="flex items-center gap-2">
                       <input type="radio" name="option_id" value={opt.id} required className="h-4 w-4" />
@@ -286,6 +239,7 @@ export default async function PollDetailPage({
                     </label>
                   ))}
                 </fieldset>
+                <Button type="submit">Submit Vote</Button>
               </form>
             </div>
           ) : (
@@ -294,7 +248,7 @@ export default async function PollDetailPage({
 
           {isOwner && (
             <div>
-              <Link href={`/polls/${pollRow.id}/edit`}>
+              <Link href={`/polls/${poll.id}/edit`}>
                 <Button variant="secondary">Edit Poll</Button>
               </Link>
             </div>

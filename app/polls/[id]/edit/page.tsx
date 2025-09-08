@@ -1,191 +1,54 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { createServerComponentClient, createServerActionClient } from "@supabase/auth-helpers-nextjs";
-import CreatePollForm from "@/components/CreatePollForm";
 
+'use client'
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import CreatePollForm from "@/components/CreatePollForm";
+import { Button } from "@/components/ui/button";
 import type { PollRow, OptionRow } from "@/lib/types";
 
-/**
- * Load a poll and its options for editing.
- *
- * Why: The edit page needs both the poll row and ordered options in one server-side fetch to
- * render an authoritative snapshot the owner can update. Co-locating the reads reduces extra
- * round-trips and ensures the server component has complete data before rendering.
- *
- * Assumptions:
- * - Row Level Security restricts visibility, but the caller will still enforce ownership.
- * - pollId is a valid UUID string.
- *
- * Edge cases:
- * - If the poll is missing or not visible, returns { poll: null, options: [], error } so the caller
- *   can redirect to a not-found/forbidden state without partially rendering.
- *
- * Connections:
- * - Used by EditPollPage on initial render prior to permission checks and diff-based updates.
- */
-async function getPollWithOptions(
-  supabase: ReturnType<typeof createServerComponentClient>,
-  pollId: string
-): Promise<{ poll: PollRow | null; options: OptionRow[]; error: unknown }> {
-  const { data: poll, error: pollError } = await supabase
-    .from("polls")
-    .select(
-      "id, title, description, start_date, end_date, allow_multiple_votes, allow_anonymous_votes, is_public, is_active, creator_id"
-    )
-    .eq("id", pollId)
-    .single();
+export default function EditPollPage({ params }: { params: { id: string } }) {
+  const supabase = createClientComponentClient();
+  const router = useRouter();
+  const [poll, setPoll] = useState<PollRow | null>(null);
+  const [options, setOptions] = useState<OptionRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  if (pollError || !poll) return { poll: null, options: [], error: pollError };
+  useEffect(() => {
+    const fetchPoll = async () => {
+      const { data: pollData, error: pollError } = await supabase
+        .from("polls")
+        .select(
+          "id, title, description, start_date, end_date, allow_multiple_votes, allow_anonymous_votes, is_public, is_active, creator_id"
+        )
+        .eq("id", params.id)
+        .single();
 
-  const { data: options, error: optionsError } = await supabase
-    .from("poll_options")
-    .select("id, text, order_index")
-    .eq("poll_id", pollId)
-    .order("order_index", { ascending: true });
-
-  return { poll: poll as PollRow, options: (options || []) as OptionRow[], error: optionsError };
-}
-
-/**
- * Server-rendered edit page for a single poll.
- *
- * Why: Owners need a secure place to modify poll metadata and options. This server component
- * authenticates the user, verifies ownership, and preloads data so the form is consistent with
- * the database state.
- *
- * Assumptions:
- * - User must be authenticated and must be the poll creator to access this page.
- * - CreatePollForm will submit changes via the updatePollAction server action.
- *
- * Edge cases:
- * - Missing poll or permission failures redirect to a safe list page with error codes.
- * - Scheduled/ended status is computed to guide the owner.
- *
- * Connections:
- * - Uses getPollWithOptions for initial data and updatePollAction for mutations.
- */
-export default async function EditPollPage({ params }: { params: { id: string } }) {
-  const supabase = createServerComponentClient({ cookies });
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
-  const pollId = params.id;
-  const { poll, options, error } = await getPollWithOptions(supabase, pollId);
-
-  if (error || !poll) {
-    redirect("/polls?error=not_found");
-  }
-
-  const pollRow = poll as PollRow;
-
-  if (pollRow.creator_id !== user.id) {
-    redirect("/polls?error=forbidden");
-  }
-
-  // Compute remaining/scheduling status message
-  /**
-   * Format a millisecond duration into a compact distance string, e.g. "2d 3h 15m".
-   *
-   * Why: The edit view surfaces schedule context (start/end) to help owners reason about
-   * timing while editing without switching back to details.
-   *
-   * Edge cases:
-   * - Negative durations clamp to 0 for display.
-   */
-  function formatDistance(ms: number) {
-    const totalSec = Math.max(0, Math.floor(ms / 1000));
-    const days = Math.floor(totalSec / 86400);
-    const hours = Math.floor((totalSec % 86400) / 3600);
-    const minutes = Math.floor((totalSec % 3600) / 60);
-    const parts: string[] = [];
-    if (days) parts.push(`${days}d`);
-    if (hours || days) parts.push(`${hours}h`);
-    parts.push(`${minutes}m`);
-    return parts.join(" ");
-  }
-
-  const nowMs = Date.now();
-  const start = pollRow.start_date ? new Date(pollRow.start_date) : null;
-  const end = pollRow.end_date ? new Date(pollRow.end_date) : null;
-  const startMs = start ? start.getTime() : null;
-  const endMs = end ? end.getTime() : null;
-
-  /**
-   * Compute a human-friendly status label and style based on start/end/active flags.
-   *
-   * Why: Owners benefit from immediate feedback about scheduling and whether changes are
-   * currently in effect.
-   *
-   * Edge cases:
-   * - Missing start/end dates fall back to generic labels.
-   */
-  function computeStatus(): { label: string; className: string } {
-    let label = "";
-    let className = "text-muted-foreground";
-
-    if (pollRow.is_active) {
-      if (startMs && nowMs < startMs) {
-        label = `Starts in ${formatDistance(startMs - nowMs)}`;
-        className = "text-amber-600";
-      } else if (endMs) {
-        if (nowMs < endMs) {
-          label = `Time remaining: ${formatDistance(endMs - nowMs)}`;
-          className = "text-emerald-700";
-        } else {
-          label = `Ended ${formatDistance(nowMs - endMs)} ago`;
-          className = "text-muted-foreground";
-        }
-      } else {
-        label = "No end date set";
-        className = "text-muted-foreground";
+      if (pollError || !pollData) {
+        router.push("/polls?error=not_found");
+        return;
       }
-    } else {
-      if (startMs && nowMs < startMs) {
-        label = `Scheduled to start in ${formatDistance(startMs - nowMs)}`;
-        className = "text-blue-700";
-      } else if (endMs && nowMs >= endMs) {
-        label = `Ended ${formatDistance(nowMs - endMs)} ago`;
-        className = "text-muted-foreground";
-      } else {
-        label = "Poll is inactive";
-        className = "text-muted-foreground";
+
+      const { data: optionsData, error: optionsError } = await supabase
+        .from("poll_options")
+        .select("id, text, order_index")
+        .eq("poll_id", params.id)
+        .order("order_index", { ascending: true });
+
+      if (optionsError) {
+        router.push(`/polls/${params.id}/edit?error=load_options_failed`);
+        return;
       }
-    }
 
-    return { label, className };
-  }
+      setPoll(pollData as PollRow);
+      setOptions((optionsData || []) as OptionRow[]);
+      setLoading(false);
+    };
 
-  const { label: statusLabel, className: statusClass } = computeStatus();
+    fetchPoll();
+  }, [params.id, router, supabase]);
 
-  /**
-   * Server action to validate and persist edits to the poll and its options.
-   *
-   * Why: Centralizes authorization (creator-only), input normalization, and the diff-based
-   * option reconciliation (insert/update/delete) to keep client code simple and secure.
-   *
-   * Assumptions:
-   * - The caller is the poll creator; RLS and explicit filters ensure only owned rows are mutated.
-   * - FormData contains parallel arrays for option IDs and texts.
-   *
-   * Edge cases:
-   * - Title required and at least two non-empty options enforced; otherwise redirect with error.
-   * - Missing options during delete are tolerated via conditional operations.
-   *
-   * Connections:
-   * - Bound to CreatePollForm as the action prop on this page.
-   */
-  async function updatePollAction(formData: FormData) {
-    "use server";
-
-    const supabase = createServerActionClient({ cookies });
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) redirect("/login");
-
+  const handleUpdatePoll = async (formData: FormData) => {
     const title = String(formData.get("title") || "").trim();
     const description = String(formData.get("description") || "").trim();
     const allowMultipleVotes = formData.get("allow_multiple_votes") === "on";
@@ -194,127 +57,83 @@ export default async function EditPollPage({ params }: { params: { id: string } 
     const isActive = formData.get("is_active") === "on";
     const startDateRaw = String(formData.get("start_date") || "").trim();
     const endDateRaw = String(formData.get("end_date") || "").trim();
+    const option_ids = formData.getAll("option_ids[]").map((v) => String(v || ""));
+    const options = formData.getAll("options[]").map((v) => String(v || "").trim());
 
-    const rawIds = formData.getAll("option_ids[]").map((v) => String(v || ""));
-    const rawTexts = formData.getAll("options[]").map((v) => String(v || "").trim());
+    const response = await fetch(`/api/polls/${params.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            title,
+            description,
+            allow_multiple_votes: allowMultipleVotes,
+            allow_anonymous_votes: allowAnonymousVotes,
+            is_public: isPublic,
+            is_active: isActive,
+            start_date: startDateRaw,
+            end_date: endDateRaw,
+            option_ids,
+            options
+          }),
+        });
 
-    // Build submitted options preserving parallel order; filter empty texts
-    const submittedOptions = rawTexts
-      .map((text, idx) => ({ id: rawIds[idx] || null, text, order_index: idx }))
-      .filter((o) => !!o.text);
-
-    if (!title || submittedOptions.length < 2) {
-      redirect(`/polls/${pollId}/edit?error=invalid_input`);
+    if (response.ok) {
+      router.push(`/polls/${params.id}`);
+    } else {
+      const { error } = await response.json();
+      alert(`Failed to update poll: ${error}`);
     }
+  };
 
-    // Update poll core fields (including visibility/active)
-    const { error: updateError } = await supabase
-      .from("polls")
-      .update({
-        title,
-        description: description || null,
-        allow_multiple_votes: allowMultipleVotes,
-        allow_anonymous_votes: allowAnonymousVotes,
-        is_public: isPublic,
-        is_active: isActive,
-        ...(startDateRaw ? { start_date: startDateRaw } : { start_date: null }),
-        ...(endDateRaw ? { end_date: endDateRaw } : { end_date: null }),
-      })
-      .eq("id", pollId)
-      .eq("creator_id", user.id);
+  const handleDeletePoll = async () => {
+    if (confirm("Are you sure you want to delete this poll?")) {
+      const response = await fetch(`/api/polls/${params.id}`, {
+        method: 'DELETE',
+      });
 
-    if (updateError) {
-      redirect(`/polls/${pollId}/edit?error=update_failed`);
-    }
-
-    // Diff-based option update
-    const { data: existingOptions, error: loadOptsError } = await supabase
-      .from("poll_options")
-      .select("id")
-      .eq("poll_id", pollId);
-
-    if (loadOptsError) {
-      redirect(`/polls/${pollId}/edit?error=update_options_failed`);
-    }
-
-    // Removed unused existingById map for clarity
-    // const existingById = new Map((existing || []).map((o) => [o.id, o] as const));
-    const submittedIds = new Set(submittedOptions.filter((s) => !!s.id).map((s) => s.id as string));
-
-    // Deletes: existing options whose id not in submitted
-    const toDelete = (existingOptions || [])
-      .filter((o) => !submittedIds.has(o.id))
-      .map((o) => o.id);
-
-    if (toDelete.length > 0) {
-      const { error: delErr } = await supabase
-        .from("poll_options")
-        .delete()
-        .in("id", toDelete)
-        .eq("poll_id", pollId);
-      if (delErr) {
-        redirect(`/polls/${pollId}/edit?error=update_options_failed`);
+      if (response.ok) {
+        router.push("/polls");
+      } else {
+        const { error } = await response.json();
+        alert(`Failed to delete poll: ${error}`);
       }
     }
+  };
 
-    // Updates: items with id present
-    for (const s of submittedOptions) {
-      if (s.id) {
-        const { error: upErr } = await supabase
-          .from("poll_options")
-          .update({ text: s.text, order_index: s.order_index })
-          .eq("id", s.id)
-          .eq("poll_id", pollId);
-        if (upErr) {
-          redirect(`/polls/${pollId}/edit?error=update_options_failed`);
-        }
-      }
-    }
+  if (loading) {
+    return <div>Loading...</div>;
+  }
 
-    // Inserts: items without id
-    const newRows = submittedOptions
-      .filter((s) => !s.id)
-      .map((s) => ({ poll_id: pollId, text: s.text, order_index: s.order_index }));
-
-    if (newRows.length > 0) {
-      const { error: insErr } = await supabase.from("poll_options").insert(newRows);
-      if (insErr) {
-        redirect(`/polls/${pollId}/edit?error=update_options_failed`);
-      }
-    }
-
-    return { ok: true, pollId };
+  if (!poll) {
+    return <div>Poll not found.</div>;
   }
 
   return (
     <div className="space-y-4">
-      <div className={`rounded-md border p-3 text-sm ${statusClass}`}>
-        {statusLabel}
-        {start && (
-          <span className="block text-xs text-muted-foreground">Starts: {start.toLocaleString()}</span>
-        )}
-        {end && (
-          <span className="block text-xs text-muted-foreground">Ends: {end.toLocaleString()}</span>
-        )}
-      </div>
       <CreatePollForm
-        action={updatePollAction}
+        onSubmit={handleUpdatePoll}
         initial={{
-          title: pollRow.title,
-          description: pollRow.description,
-          start_date: pollRow.start_date as any,
-          end_date: pollRow.end_date as any,
-          allow_multiple_votes: pollRow.allow_multiple_votes as any,
-          allow_anonymous_votes: pollRow.allow_anonymous_votes as any,
-          is_public: pollRow.is_public,
-          is_active: pollRow.is_active,
+          title: poll.title,
+          description: poll.description,
+          start_date: poll.start_date as any,
+          end_date: poll.end_date as any,
+          allow_multiple_votes: poll.allow_multiple_votes as any,
+          allow_anonymous_votes: poll.allow_anonymous_votes as any,
+          is_public: poll.is_public,
+          is_active: poll.is_active,
           optionsWithIds: (options || []).map((o: OptionRow) => ({ id: o.id, text: o.text })),
           options: (options || []).map((o: OptionRow) => o.text),
         }}
         titleText="Edit Poll"
         submitLabel="Save Changes"
-        successMessage="Poll updated successfully! Redirecting to polls…"
+        successMessage="Poll updated successfully! Redirecting to poll..."
       />
+      <div className="flex justify-end">
+          <Button variant="destructive" onClick={handleDeletePoll}>Delete Poll</Button>
+      </div>
     </div>
   );
 }

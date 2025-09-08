@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+// Removed server-only imports to keep this module usable in client components
 import type { PollRow, OptionRow, VoteRow } from "./types";
 
 // Minimal Supabase client shape used here
@@ -6,7 +6,7 @@ export type SupabaseClientLike = {
   from: (table: string) => any;
 };
 
-// Minimal cookie store shape used by our helpers
+// Minimal cookie store shape used by our helpers (for server usage)
 export type SimpleCookieStore = {
   get(name: string): { value?: string } | undefined;
 };
@@ -48,6 +48,14 @@ export function getVoteCookieKey(pollId: string): string {
   return `voted_poll_${pollId}`;
 }
 
+function readClientCookie(name: string): string | undefined {
+  if (typeof document === "undefined") return undefined;
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()!.split(";").shift();
+  return undefined;
+}
+
 export async function hasAlreadyVoted(
   supabase: SupabaseClientLike,
   pollId: string,
@@ -63,8 +71,17 @@ export async function hasAlreadyVoted(
       .limit(1);
     return Boolean(existing && existing.length > 0);
   }
-  const store = cookieStore ?? (await cookies());
-  return store.get(getVoteCookieKey(pollId))?.value === "1";
+
+  // Anonymous user: check via cookie
+  // Prefer client-side document.cookie when available; otherwise rely on provided server cookieStore.
+  const key = getVoteCookieKey(pollId);
+  if (typeof window !== "undefined") {
+    return readClientCookie(key) === "1";
+  }
+  if (cookieStore) {
+    return cookieStore.get(key)?.value === "1";
+  }
+  return false;
 }
 
 export function computeCounts(
@@ -73,16 +90,24 @@ export function computeCounts(
   votesError: boolean
 ): { countsMap: Map<string, number>; totalVotes: number } {
   const countsMap = new Map<string, number>();
-  if (!votesError && votes && votes.length) {
-    for (const v of votes) {
+
+  if (!votesError) {
+    // Initialize all option counts to 0 to ensure consistent display even with zero votes
+    for (const opt of options || []) {
+      countsMap.set(opt.id, 0);
+    }
+    // Increment counts from live votes (may be an empty array, which is fine)
+    for (const v of votes || []) {
       const prev = countsMap.get(v.option_id) || 0;
       countsMap.set(v.option_id, prev + 1);
     }
   } else {
+    // Fall back to denormalized/cached counts when votes are not readable due to RLS
     for (const opt of options || []) {
       countsMap.set(opt.id, Number(opt.vote_count ?? 0));
     }
   }
+
   const totalVotes = Array.from(countsMap.values()).reduce((acc, n) => acc + n, 0);
   return { countsMap, totalVotes };
 }
