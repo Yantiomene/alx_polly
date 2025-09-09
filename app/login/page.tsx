@@ -89,12 +89,12 @@ export default function LoginPage() {
               </div>
               {error && <p className="text-sm text-red-600" role="alert">{error}</p>}
             </div>
+            <Button type="submit" size="lg" className="mt-4 w-full font-semibold" disabled={loading} aria-busy={loading}>
+              {loading ? 'Logging in…' : 'Login'}
+            </Button>
           </form>
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
-          <Button size="lg" className="w-full font-semibold" onClick={handleSignIn} disabled={loading}>
-            {loading ? 'Logging in…' : 'Login'}
-          </Button>
           <p className="text-sm text-muted-foreground text-center">
             Don't yet have an account?{' '}
             <Link href="/signup" className="text-primary hover:underline font-medium">Sign up</Link>

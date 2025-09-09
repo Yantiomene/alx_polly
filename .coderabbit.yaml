@@ -12,13 +12,14 @@ reviews:
     enabled: true
     drafts: false
 
-  # Security scanning configuration
-  security_scanning:
-    enabled: true
-    scan_dependencies: true
-    scan_secrets: true
-    vulnerability_alerts: true
-    sast_enabled: true  # Static Application Security Testing
+  # Security & quality scanners (supported)
+  tools:
+    gitleaks:
+      enabled: true
+    osvScanner:
+      enabled: true
+    semgrep:
+      enabled: true
 
   # AI-powered suggestions
   ai_suggestions:
@@ -51,8 +52,7 @@ reviews:
         - Event handler security best practices
         - Secure prop validation and sanitization
 
-    # Server Actions - Focus on security and error handling
-    - path: "app/api/*.ts"
+    - path: "app/api/**/*.{ts,tsx}"
       instructions: |
         When reviewing Server Actions, check for:
         - Input validation and sanitization
@@ -100,33 +100,15 @@ reviews:
         - Check for secure password reset flow
         - Validate JWT handling
         - Monitor for brute force protection
+  # Supported enforcement knobs
+  pre_merge_checks:
+    title:
+      mode: warning
+    description:
+      mode: warning
+    docstrings:
+      mode: warning
+      threshold: 80
 
-  # Severity levels for different types of issues
-  severity:
-    critical:
-      - security_vulnerabilities
-      - memory_leaks
-      - authentication_bypass
-      - data_exposure
-    high:
-      - performance_issues
-      - security_misconfiguration
-      - insecure_dependencies
-    medium:
-      - code_style_violations
-      - accessibility_issues
-      - type_safety_concerns
-    low:
-      - documentation_missing
-      - code_duplication
-      - naming_conventions
 
-  # AI-powered code metrics
-  code_metrics:
-    enabled: true
-    analyze:
-      - cyclomatic_complexity
-      - cognitive_complexity
-      - maintainability_index
-      - code_duplication
       - test_coverage
