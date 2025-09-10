@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "./ui/card";
+import { Label } from "./ui/label";
+import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
+import { Button } from "./ui/button";
 
 type CreateOrUpdateResult = { ok: boolean; pollId: string } | void;
 
@@ -27,7 +27,7 @@ type InitialValues = {
 };
 
 type Props = {
-  action: (formData: FormData) => Promise<CreateOrUpdateResult>;
+  onSubmit: (formData: FormData) => Promise<CreateOrUpdateResult>;
   titleText?: string;
   submitLabel?: string;
   successMessage?: string;
