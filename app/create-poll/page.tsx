@@ -1,7 +1,7 @@
 
 'use client'
 import { useRouter } from "next/navigation";
-import CreatePollForm from "@/components/CreatePollForm";
+import CreatePollForm from "../../components/CreatePollForm";
 
 export default function CreatePollPage() {
   const router = useRouter();

@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { useAuth } from '@/components/auth-context';
+import { Button } from '../ui/button';
+import { useAuth } from '../auth-context';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useState, useMemo, useRef, useEffect } from 'react';
 
